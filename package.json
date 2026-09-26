@@ -1,0 +1,34 @@
+{
+  "dependencies": {
+    "@react-navigation/native": "^7.1.0",
+    "@react-navigation/native-stack": "^7.1.0",
+    "expo": "57.0.25",
+    "expo-file-system": "~19.0.0",
+    "expo-sharing": "~14.0.0",
+    "expo-sqlite": "57.0.3",
+    "expo-status-bar": "~3.0.0",
+    "react": "^19.1.4",
+    "react-native": "^0.81.6",
+    "react-native-safe-area-context": "~5.4.0",
+    "react-native-screens": "~4.12.0"
+  },
+  "description": "Can't pick? Fatevo. A fun random decision-maker — add your options, weight them, and let fate decide.",
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@types/react": "^19.1.4",
+    "babel-preset-expo": "~54.0.0",
+    "hermes-compiler": "^250829098.0.19",
+    "typescript": "~5.9.2"
+  },
+  "main": "index.js",
+  "name": "fatevo",
+  "private": true,
+  "scripts": {
+    "android": "expo start --android",
+    "start": "expo start",
+    "typecheck": "tsc --noEmit",
+    "test:roll": "tsc src/roll.ts --outDir node_modules/.cache/roll-test --module commonjs --target es2020 && node scripts/test-roll.js node_modules/.cache/roll-test/roll.js",
+    "test:streak": "tsc src/streak.ts --outDir node_modules/.cache/streak-test --module commonjs --target es2020 && node scripts/test-streak.js node_modules/.cache/streak-test/streak.js"
+  },
+  "version": "1.0.0"
+}
