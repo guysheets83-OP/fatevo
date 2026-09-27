@@ -221,9 +221,12 @@ export default function ResultScreen() {
   const shareResult = () => {
     const opt = getOption(winnerId);
     const name = opt?.name ?? displayName;
-    Share.share({ message: `🎲 Fate chose ${name.toUpperCase()}! Can't pick? Fatevo.` }).catch(
-      () => {}
-    );
+    const options = getOptions(setId)
+      .map((o) => o.name)
+      .join(', ');
+    Share.share({
+      message: `🎲 Fate chose ${name.toUpperCase()}!\nThe options were: ${options}\nCan't pick? Fatevo.`,
+    }).catch(() => {});
   };
 
   const kickerText = revealed
