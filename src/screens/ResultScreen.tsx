@@ -2,7 +2,15 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Animated,
+  Easing,
+  Share,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { getOption, getOptions } from '../db';
 import type { RootStackParamList } from '../navigation';
 import { colors, spacing } from '../theme';
@@ -12,7 +20,9 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'Result'>;
 type Route = RouteProp<RootStackParamList, 'Result'>;
 
 const SHUFFLE_MS = 1500;
-const MINI_MS = 600;
+const WHEEL_MS = 2000;
+const ROUND_BEAT_MS = 1100;
+const WHEEL_SPINS = 4;
 
 const FATE_PHRASES = [
   'Fate has spoken',
@@ -31,13 +41,12 @@ function randomPhrase(): string {
   return FATE_PHRASES[Math.floor(Math.random() * FATE_PHRASES.length)];
 }
 
-type AnimMode = 'coin' | 'slot' | 'dice';
+type AnimMode = 'coin' | 'slot' | 'wheel';
 
-const PIPS = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
-
-function randomPip(): string {
-  return PIPS[Math.floor(Math.random() * PIPS.length)];
-}
+/** Wheel geometry (px). */
+const WHEEL_SIZE = 300;
+const WHEEL_C = WHEEL_SIZE / 2;
+const WHEEL_R = 102;
 
 /** Screen 4 — animated winner reveal. */
 export default function ResultScreen() {
@@ -51,39 +60,45 @@ export default function ResultScreen() {
   const [displayName, setDisplayName] = useState('…');
   const [revealed, setRevealed] = useState(false);
   const [phrase, setPhrase] = useState(FATE_PHRASES[0]);
-  const [mode, setMode] = useState<AnimMode>('dice');
-  const [miniIndex, setMiniIndex] = useState(-1);
-  const [miniName, setMiniName] = useState('');
+  const [mode, setMode] = useState<AnimMode>('wheel');
+  const [roundIdx, setRoundIdx] = useState(-1);
+  const [roundBeat, setRoundBeat] = useState<{ index: number; name: string } | null>(null);
+  const [champion, setChampion] = useState<{
+    name: string;
+    wins: number;
+    total: number;
+  } | null>(null);
   const [coinFace, setCoinFace] = useState('');
   const [reelNames, setReelNames] = useState<string[]>([]);
   const [slotIdx, setSlotIdx] = useState(0);
-  const [pip, setPip] = useState('⚄');
   const [streakInfo, setStreakInfo] = useState({
     streakCount: route.params.streakCount ?? 0,
     milestoneTitle: route.params.milestoneTitle ?? null,
     firstRollToday: route.params.firstRollToday ?? false,
   });
   const scale = useRef(new Animated.Value(0.6)).current;
-  const miniPop = useRef(new Animated.Value(0.7)).current;
   const milestoneScale = useRef(new Animated.Value(0.6)).current;
   const flipX = useRef(new Animated.Value(1)).current;
-  const diceRot = useRef(new Animated.Value(0)).current;
-  const rotDeg = useRef(0);
+  const wheelRot = useRef(new Animated.Value(0)).current;
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const alive = useRef(true);
 
   const clearTimers = () => {
     timers.current.forEach(clearTimeout);
     timers.current = [];
   };
 
-  /** Full spectacle reveal: coin flip (2 options), slot machine (3), tumbling dice (4+). */
-  const runFinalReveal = useCallback(
-    (id: number) => {
+  /**
+   * Full spectacle animation for the current option count, then calls onLanded.
+   * coin (2 options) and slot (3) use the slowing tick chain; the wheel (4+)
+   * spins with a decelerating ease and lands the winner's segment under the
+   * gold pointer. The winner is predetermined by the roll logic — the
+   * animation just lands on it.
+   */
+  const playAnimation = useCallback(
+    (id: number, onLanded: () => void) => {
       clearTimers();
-      setMiniIndex(-1);
-      setRevealed(false);
-      setPhrase(randomPhrase());
-      scale.setValue(0.6);
+      wheelRot.stopAnimation();
       const options = getOptions(setId);
       const names = options.map((o) => o.name);
       const winner = getOption(id);
@@ -91,23 +106,43 @@ export default function ResultScreen() {
         navigation.goBack();
         return;
       }
-      const m: AnimMode = names.length <= 2 ? 'coin' : names.length === 3 ? 'slot' : 'dice';
+      const m: AnimMode = names.length <= 2 ? 'coin' : names.length === 3 ? 'slot' : 'wheel';
       setMode(m);
       setReelNames(names);
       setSlotIdx(0);
       setCoinFace(names[0]);
-      setPip(randomPip());
-      rotDeg.current = 0;
-      diceRot.setValue(0);
       flipX.setValue(1);
-      // Shuffle phase: animate, slowing toward the end.
+      wheelRot.setValue(0);
+      const done = () => {
+        if (alive.current) onLanded();
+      };
+      if (m === 'wheel') {
+        const n = names.length;
+        const seg = 360 / n;
+        const wIdx = Math.max(
+          0,
+          options.findIndex((o) => o.id === id)
+        );
+        // Winner pill sits at wIdx * seg degrees clockwise from the top;
+        // rotate the disc so it ends under the pointer, plus full spins.
+        const landing = (360 - ((wIdx * seg) % 360)) % 360;
+        const total = 360 * WHEEL_SPINS + landing;
+        Animated.timing(wheelRot, {
+          toValue: total,
+          duration: WHEEL_MS,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }).start(({ finished }) => {
+          if (finished) done();
+        });
+        return;
+      }
+      // coin / slot: animate with ticks that slow toward the end.
       const start = Date.now();
       const tick = () => {
         const elapsed = Date.now() - start;
         if (elapsed >= SHUFFLE_MS) {
-          setDisplayName(winner.name);
-          setRevealed(true);
-          Animated.spring(scale, { toValue: 1, friction: 5, useNativeDriver: true }).start();
+          done();
           return;
         }
         const progress = elapsed / SHUFFLE_MS;
@@ -120,60 +155,93 @@ export default function ResultScreen() {
             duration: Math.max(40, tickMs * 0.85),
             useNativeDriver: true,
           }).start();
-        } else if (m === 'slot') {
-          setSlotIdx((i) => i + 1 + Math.floor(Math.random() * 2));
         } else {
-          setPip(randomPip());
-          const from = rotDeg.current % 360;
-          const to = from + 120 + Math.floor(Math.random() * 120);
-          rotDeg.current = to;
-          diceRot.setValue(from);
-          Animated.timing(diceRot, {
-            toValue: to,
-            duration: Math.max(50, tickMs * 0.9),
-            useNativeDriver: true,
-          }).start();
+          setSlotIdx((i) => i + 1 + Math.floor(Math.random() * 2));
         }
         timers.current.push(setTimeout(tick, tickMs));
       };
       tick();
     },
-    [setId, navigation, scale, flipX, diceRot]
+    [setId, navigation, flipX, wheelRot]
   );
 
-  /** Best-of mode: quick 600ms mini-reveals for every roll, then the champion reveal. */
-  const playMinis = useCallback(
-    (ids: number[], finalId: number) => {
-      clearTimers();
+  /** Single roll: full animation, then the winner card reveal. */
+  const runSingleReveal = useCallback(
+    (id: number) => {
+      setRoundIdx(-1);
+      setRoundBeat(null);
+      setChampion(null);
       setRevealed(false);
-      setMiniIndex(-1);
+      setPhrase(randomPhrase());
+      scale.setValue(0.6);
+      playAnimation(id, () => {
+        const opt = getOption(id);
+        setDisplayName(opt?.name ?? '…');
+        setRevealed(true);
+        Animated.spring(scale, { toValue: 1, friction: 5, useNativeDriver: true }).start();
+      });
+    },
+    [playAnimation, scale]
+  );
+
+  /**
+   * Best-of mode: every round plays the FULL animation, then a brief
+   * "Round X winner" beat, then the next round. After all rounds, the
+   * champion reveal — plurality winner (most round wins), tiebreak already
+   * resolved by majorityWinnerId in performBestOf.
+   */
+  const playRounds = useCallback(
+    (ids: number[], championId: number) => {
+      setRevealed(false);
+      setChampion(null);
+      setRoundBeat(null);
+      setPhrase(randomPhrase());
       let i = 0;
-      const step = () => {
+      const next = () => {
+        if (!alive.current) return;
         if (i >= ids.length) {
-          runFinalReveal(finalId);
+          const champ = getOption(championId);
+          const wins = ids.filter((x) => x === championId).length;
+          setChampion({ name: champ?.name ?? '…', wins, total: ids.length });
+          setRoundIdx(-1);
+          setRevealed(true);
+          scale.setValue(0.6);
+          Animated.spring(scale, { toValue: 1, friction: 5, useNativeDriver: true }).start();
           return;
         }
-        const opt = getOption(ids[i]);
-        setMiniName(opt ? opt.name : '…');
-        setMiniIndex(i);
-        miniPop.setValue(0.7);
-        Animated.spring(miniPop, { toValue: 1, friction: 6, useNativeDriver: true }).start();
-        i += 1;
-        timers.current.push(setTimeout(step, MINI_MS));
+        const roundId = ids[i];
+        const idx = i;
+        setRoundIdx(idx);
+        playAnimation(roundId, () => {
+          const opt = getOption(roundId);
+          setRoundBeat({ index: idx, name: opt?.name ?? '…' });
+          timers.current.push(
+            setTimeout(() => {
+              if (!alive.current) return;
+              setRoundBeat(null);
+              i += 1;
+              next();
+            }, ROUND_BEAT_MS)
+          );
+        });
       };
-      step();
+      next();
     },
-    [runFinalReveal, miniPop]
+    [playAnimation, scale]
   );
 
   useEffect(() => {
+    alive.current = true;
     const ids = route.params.rollSequence;
     if (ids && ids.length > 1) {
-      playMinis(ids, route.params.winnerId);
+      playRounds(ids, route.params.winnerId);
     } else {
-      runFinalReveal(route.params.winnerId);
+      runSingleReveal(route.params.winnerId);
     }
-    return clearTimers;
+    return () => {
+      alive.current = false;
+      clearTimers();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -201,7 +269,7 @@ export default function ResultScreen() {
           milestoneTitle: streak.milestone?.title ?? null,
           firstRollToday: streak.isFirstRollToday,
         });
-        playMinis(ids, winner.id);
+        playRounds(ids, winner.id);
       } else {
         const { winner, streak } = performRoll(setId);
         setWinnerId(winner.id);
@@ -211,7 +279,7 @@ export default function ResultScreen() {
           milestoneTitle: streak.milestone?.title ?? null,
           firstRollToday: streak.isFirstRollToday,
         });
-        runFinalReveal(winner.id);
+        runSingleReveal(winner.id);
       }
     } catch {
       navigation.goBack();
@@ -230,12 +298,14 @@ export default function ResultScreen() {
   };
 
   const kickerText = revealed
-    ? `🎲 ${phrase}`
-    : miniIndex >= 0 && seq
-      ? `🎲 Roll ${miniIndex + 1} of ${seq.length}…`
+    ? champion
+      ? '🏆 Champion crowned'
+      : `🎲 ${phrase}`
+    : roundBeat || roundIdx >= 0
+      ? `🎲 Round ${(roundBeat?.index ?? roundIdx) + 1} of ${seq?.length ?? '?'}…`
       : '🎲 Rolling…';
 
-  const diceSpin = diceRot.interpolate({
+  const wheelSpin = wheelRot.interpolate({
     inputRange: [0, 360],
     outputRange: ['0deg', '360deg'],
   });
@@ -250,24 +320,24 @@ export default function ResultScreen() {
         ]
       : ['…', '…', '…'];
 
+  // Shrink the wheel pills when there are many options so they don't overlap.
+  const pillW =
+    n > 0 ? Math.min(84, Math.max(46, Math.floor((2 * Math.PI * WHEEL_R) / n) - 8)) : 84;
+
   return (
     <View style={styles.container}>
       <Text style={styles.kicker}>{kickerText}</Text>
 
-      {!revealed && miniIndex >= 0 && (
-        <Animated.View
-          style={[styles.winnerCard, styles.miniCard, { transform: [{ scale: miniPop }] }]}
-        >
-          <Text style={styles.miniLabel}>
-            Roll {miniIndex + 1} of {seq?.length ?? '?'}
-          </Text>
+      {!revealed && roundBeat && (
+        <View style={[styles.winnerCard, styles.miniCard]}>
+          <Text style={styles.miniLabel}>Round {roundBeat.index + 1} winner</Text>
           <Text style={styles.winner} numberOfLines={3}>
-            {miniName}
+            {roundBeat.name}
           </Text>
-        </Animated.View>
+        </View>
       )}
 
-      {!revealed && miniIndex < 0 && (
+      {!revealed && !roundBeat && (
         <View style={styles.stage}>
           {mode === 'coin' && (
             <Animated.View style={[styles.coin, { transform: [{ scaleX: flipX }] }]}>
@@ -291,19 +361,55 @@ export default function ResultScreen() {
               </Text>
             </View>
           )}
-          {mode === 'dice' && (
-            <Animated.View style={[styles.dice, { transform: [{ rotate: diceSpin }] }]}>
-              <Text style={styles.pip}>{pip}</Text>
-            </Animated.View>
+          {mode === 'wheel' && (
+            <View style={styles.wheelWrap}>
+              <Text style={styles.pointer}>▼</Text>
+              <View style={styles.wheelBox}>
+                <Animated.View style={[styles.wheel, { transform: [{ rotate: wheelSpin }] }]}>
+                  {reelNames.map((name, i) => {
+                    const a = (i * 2 * Math.PI) / reelNames.length;
+                    const x = WHEEL_C + WHEEL_R * Math.sin(a);
+                    const y = WHEEL_C - WHEEL_R * Math.cos(a);
+                    return (
+                      <View
+                        key={`${i}-${name}`}
+                        style={[styles.pillAnchor, { left: x, top: y }]}
+                      >
+                        <View
+                          style={[
+                            styles.pill,
+                            { width: pillW, marginLeft: -pillW / 2 },
+                            i % 2 === 0 && styles.pillAlt,
+                          ]}
+                        >
+                          <Text style={styles.pillText} numberOfLines={1}>
+                            {name}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </Animated.View>
+                <View style={styles.hub}>
+                  <Text style={styles.hubText}>🎲</Text>
+                </View>
+              </View>
+            </View>
           )}
         </View>
       )}
 
       {revealed && (
         <Animated.View style={[styles.winnerCard, { transform: [{ scale }] }]}>
+          {champion && <Text style={styles.miniLabel}>🏆 Champion</Text>}
           <Text style={styles.winner} numberOfLines={3}>
-            {displayName}
+            {champion ? champion.name : displayName}
           </Text>
+          {champion && (
+            <Text style={styles.champSub}>
+              {champion.wins} of {champion.total} rounds
+            </Text>
+          )}
         </Animated.View>
       )}
 
@@ -354,7 +460,7 @@ const styles = StyleSheet.create({
   },
   kicker: { color: colors.accent, fontSize: 16, fontWeight: '700', marginBottom: spacing.md },
   stage: {
-    minHeight: 220,
+    minHeight: 380,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -395,17 +501,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   slotRowMain: { color: '#fff', fontSize: 26, fontWeight: '800' },
-  dice: {
-    width: 150,
-    height: 150,
-    borderRadius: 28,
-    backgroundColor: colors.surface,
-    borderWidth: 4,
+  wheelWrap: { alignItems: 'center' },
+  pointer: { color: colors.accent, fontSize: 36, marginBottom: -12, zIndex: 2 },
+  wheelBox: { width: WHEEL_SIZE, height: WHEEL_SIZE },
+  wheel: {
+    width: WHEEL_SIZE,
+    height: WHEEL_SIZE,
+    borderRadius: WHEEL_SIZE / 2,
+    backgroundColor: '#23233f',
+    borderWidth: 5,
     borderColor: colors.accent,
+  },
+  pillAnchor: { position: 'absolute', width: 0, height: 0 },
+  pill: {
+    height: 32,
+    marginTop: -16,
+    borderRadius: 16,
+    backgroundColor: '#ffffff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+  },
+  pillAlt: { backgroundColor: colors.accent },
+  pillText: { fontSize: 12, fontWeight: '800', color: colors.ink },
+  hub: {
+    position: 'absolute',
+    left: WHEEL_C - 32,
+    top: WHEEL_C - 32,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.accent,
+    borderWidth: 3,
+    borderColor: '#a8861d',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  pip: { fontSize: 84, color: colors.ink },
+  hubText: { fontSize: 30 },
   winnerCard: {
     backgroundColor: colors.surface,
     borderRadius: 20,
@@ -426,6 +558,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   winner: { fontSize: 34, fontWeight: '800', color: colors.ink, textAlign: 'center' },
+  champSub: { color: colors.muted, fontSize: 15, fontWeight: '700', marginTop: spacing.xs },
   milestoneCard: {
     backgroundColor: colors.surface,
     borderRadius: 20,
