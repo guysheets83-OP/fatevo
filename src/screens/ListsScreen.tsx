@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import NamePrompt from '../components/NamePrompt';
+import HowItWorks from '../components/HowItWorks';
 import Tutorial from '../components/Tutorial';
 import {
   createSet,
@@ -56,6 +57,7 @@ export default function ListsScreen() {
   const [streakCount, setStreakCount] = useState(0);
   const [streakTitle, setStreakTitle] = useState<string | null>(null);
   const [tutorialVisible, setTutorialVisible] = useState(false);
+  const [helpVisible, setHelpVisible] = useState(false);
   const tutorialChecked = useRef(false);
 
   const reload = useCallback(() => {
@@ -76,16 +78,25 @@ export default function ListsScreen() {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <TouchableOpacity
-          onPress={() => {
-            setEditing(null);
-            setPromptVisible(true);
-          }}
-          style={styles.addButton}
-          accessibilityLabel="Create new list"
-        >
-          <Text style={styles.addButtonText}>＋</Text>
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            onPress={() => setHelpVisible(true)}
+            style={styles.infoButton}
+            accessibilityLabel="How Fatevo works"
+          >
+            <Text style={styles.infoButtonText}>ⓘ</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              setEditing(null);
+              setPromptVisible(true);
+            }}
+            style={styles.addButton}
+            accessibilityLabel="Create new list"
+          >
+            <Text style={styles.addButtonText}>＋</Text>
+          </TouchableOpacity>
+        </View>
       ),
     });
   }, [navigation]);
@@ -227,6 +238,7 @@ export default function ListsScreen() {
           setTutorialVisible(false);
         }}
       />
+      <HowItWorks visible={helpVisible} onClose={() => setHelpVisible(false)} />
     </View>
   );
 }
@@ -297,4 +309,15 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   addButtonText: { color: '#fff', fontSize: 22, lineHeight: 24, fontWeight: '600' },
+  headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  infoButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  infoButtonText: { color: colors.primary, fontSize: 20, lineHeight: 22, fontWeight: '700' },
 });
