@@ -13,6 +13,23 @@ type Route = RouteProp<RootStackParamList, 'Result'>;
 
 const SHUFFLE_MS = 1500;
 
+const FATE_PHRASES = [
+  'Fate has spoken',
+  'The dice have decided',
+  'Destiny calls',
+  'It is written',
+  'The stars align',
+  'No take-backs!',
+  'Fortune favors this one',
+  'The universe chooses',
+  'Decided. Done.',
+  'Your fate is sealed',
+];
+
+function randomPhrase(): string {
+  return FATE_PHRASES[Math.floor(Math.random() * FATE_PHRASES.length)];
+}
+
 /** Screen 4 — animated winner reveal. */
 export default function ResultScreen() {
   const navigation = useNavigation<Nav>();
@@ -22,6 +39,7 @@ export default function ResultScreen() {
   const [winnerId, setWinnerId] = useState(route.params.winnerId);
   const [displayName, setDisplayName] = useState('…');
   const [revealed, setRevealed] = useState(false);
+  const [phrase, setPhrase] = useState(FATE_PHRASES[0]);
   const [streakInfo, setStreakInfo] = useState({
     streakCount: route.params.streakCount ?? 0,
     milestoneTitle: route.params.milestoneTitle ?? null,
@@ -40,6 +58,7 @@ export default function ResultScreen() {
     (id: number) => {
       clearTimers();
       setRevealed(false);
+      setPhrase(randomPhrase());
       scale.setValue(0.6);
       const options = getOptions(setId);
       const names = options.map((o) => o.name);
@@ -102,7 +121,7 @@ export default function ResultScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.kicker}>{revealed ? '🎲 Fate has spoken' : '🎲 Rolling…'}</Text>
+      <Text style={styles.kicker}>{revealed ? `🎲 ${phrase}` : '🎲 Rolling…'}</Text>
       <Animated.View style={[styles.winnerCard, { transform: [{ scale }] }]}>
         <Text style={styles.winner} numberOfLines={3}>
           {displayName}

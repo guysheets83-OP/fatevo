@@ -200,14 +200,18 @@ export default function SetDetailScreen() {
         >
           <Text style={styles.addOptionText}>＋ Add option</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.roll, !canRoll && styles.rollDisabled]}
-          onPress={handleRoll}
-          disabled={!canRoll}
-          accessibilityLabel="Roll the dice"
-        >
-          <Text style={styles.rollText}>🎲 ROLL</Text>
-        </TouchableOpacity>
+        <View style={styles.rollWrap}>
+          <TouchableOpacity
+            style={[styles.roll, !canRoll && styles.rollDisabled]}
+            onPress={handleRoll}
+            disabled={!canRoll}
+            accessibilityLabel="Roll the dice"
+            activeOpacity={0.85}
+          >
+            <Text style={styles.rollDice}>🎲</Text>
+            <Text style={styles.rollLabel}>ROLL</Text>
+          </TouchableOpacity>
+        </View>
         {!canRoll && (
           <Text style={styles.rollHint}>Add at least 2 options to roll.</Text>
         )}
@@ -255,24 +259,42 @@ const styles = StyleSheet.create({
   weightText: { fontSize: 13, fontWeight: '700', color: colors.ink },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyText: { color: colors.muted, fontSize: 15 },
-  footer: { padding: spacing.md, gap: spacing.sm },
+  footer: { padding: spacing.md, alignItems: 'center', gap: spacing.sm },
   addOption: {
     alignItems: 'center',
-    padding: spacing.sm,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
   },
-  addOptionText: { fontSize: 15, fontWeight: '600', color: colors.ink },
+  addOptionText: { fontSize: 14, fontWeight: '600', color: colors.ink },
+  rollWrap: { alignItems: 'center', marginVertical: spacing.sm },
   roll: {
-    backgroundColor: colors.primary,
-    borderRadius: 16,
-    padding: spacing.md,
+    width: 190,
+    height: 190,
+    borderRadius: 95,
+    backgroundColor: colors.accent,
     alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 4,
+    borderColor: '#a8861d',
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
   rollDisabled: { opacity: 0.35 },
-  rollText: { color: '#fff', fontSize: 22, fontWeight: '800', letterSpacing: 2 },
+  rollDice: { fontSize: 54 },
+  rollLabel: {
+    color: colors.ink,
+    fontSize: 26,
+    fontWeight: '800',
+    letterSpacing: 3,
+    marginTop: 4,
+  },
   rollHint: { textAlign: 'center', color: colors.muted, fontSize: 12 },
   shareButton: { paddingHorizontal: 8, paddingVertical: 6 },
   shareText: { color: colors.ink, fontSize: 16, fontWeight: '600' },

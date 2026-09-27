@@ -35,7 +35,13 @@ export default function App() {
         <Stack.Screen
           name="Result"
           component={ResultScreen}
-          options={{ title: 'Fate decides…', headerBackVisible: false, gestureEnabled: false }}
+          options={{
+            title: 'Fate decides…',
+            headerBackVisible: false,
+            gestureEnabled: false,
+            headerTitleAlign: 'center',
+            headerTitleStyle: { fontSize: 26, fontWeight: '800', color: colors.accent },
+          }}
         />
       </Stack.Navigator>
     </NavigationContainer>
