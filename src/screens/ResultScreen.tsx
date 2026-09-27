@@ -1,3 +1,4 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
@@ -87,6 +88,8 @@ export default function ResultScreen() {
   const scale = useRef(new Animated.Value(0.6)).current;
   const milestoneScale = useRef(new Animated.Value(0.6)).current;
   const flipX = useRef(new Animated.Value(1)).current;
+  /** Toss arc for the coin: rises and settles during the flip. */
+  const coinTossY = useRef(new Animated.Value(0)).current;
   const wheelRot = useRef(new Animated.Value(0)).current;
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const alive = useRef(true);
@@ -112,6 +115,7 @@ export default function ResultScreen() {
     (id: number, onLanded: () => void, pool?: SetOption[], modeOverride?: AnimMode) => {
       clearTimers();
       wheelRot.stopAnimation();
+      coinTossY.stopAnimation();
       const options = pool ?? getOptions(setId);
       const names = options.map((o) => o.name);
       const winner = getOption(id);
@@ -153,6 +157,24 @@ export default function ResultScreen() {
       }
       // coin / slot: animate with ticks that slow toward the end.
       const start = Date.now();
+      if (m === 'coin') {
+        // Toss arc: the coin rises a touch, then settles as the flip ends.
+        coinTossY.setValue(0);
+        Animated.sequence([
+          Animated.timing(coinTossY, {
+            toValue: -32,
+            duration: SHUFFLE_MS * 0.35,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.timing(coinTossY, {
+            toValue: 0,
+            duration: SHUFFLE_MS * 0.65,
+            easing: Easing.in(Easing.quad),
+            useNativeDriver: true,
+          }),
+        ]).start();
+      }
       const tick = () => {
         const elapsed = Date.now() - start;
         if (elapsed >= SHUFFLE_MS) {
@@ -176,7 +198,7 @@ export default function ResultScreen() {
       };
       tick();
     },
-    [setId, navigation, flipX, wheelRot]
+    [setId, navigation, flipX, wheelRot, coinTossY]
   );
 
   /** Single roll: full animation, then the winner card reveal. */
@@ -523,10 +545,24 @@ export default function ResultScreen() {
       {!revealed && !roundBeat && (
         <View style={styles.stage}>
           {mode === 'coin' && (
-            <Animated.View style={[styles.coin, { transform: [{ scaleX: flipX }] }]}>
-              <Text style={styles.coinFace} numberOfLines={2}>
-                {coinFace}
-              </Text>
+            <Animated.View style={[styles.coinToss, { transform: [{ translateY: coinTossY }] }]}>
+              <Animated.View style={[styles.coinRim, { transform: [{ scaleX: flipX }] }]}>
+                <View style={styles.coinGroove}>
+                  <LinearGradient
+                    colors={['#f9e88a', '#f0d060', '#d9ab2e', '#b08a24']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.coinFaceGrad}
+                  >
+                    <View style={styles.coinShine} />
+                    <Text style={styles.coinBrand}>★ FATEVO ★</Text>
+                    <Text style={styles.coinDie}>🎲</Text>
+                    <Text style={styles.coinName} numberOfLines={2}>
+                      {coinFace}
+                    </Text>
+                  </LinearGradient>
+                </View>
+              </Animated.View>
             </Animated.View>
           )}
           {mode === 'slot' && (
@@ -650,22 +686,75 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  coin: {
-    width: 170,
-    height: 170,
-    borderRadius: 85,
-    backgroundColor: colors.accent,
-    borderWidth: 5,
-    borderColor: '#a8861d',
+  coinToss: {
     alignItems: 'center',
     justifyContent: 'center',
-    padding: spacing.sm,
   },
-  coinFace: {
-    color: colors.ink,
-    fontSize: 20,
+  // Milled rim: antique dark-gold outer band with a darker edge.
+  coinRim: {
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: '#7d6116',
+    borderWidth: 2,
+    borderColor: '#5e4a0e',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Second concentric ring: the groove between rim and face.
+  coinGroove: {
+    width: 146,
+    height: 146,
+    borderRadius: 73,
+    backgroundColor: '#a8842a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Metallic face: light-gold -> deep-gold sheen.
+  coinFaceGrad: {
+    width: 138,
+    height: 138,
+    borderRadius: 69,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  // Soft white shine, top-left.
+  coinShine: {
+    position: 'absolute',
+    top: 12,
+    left: 14,
+    width: 64,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.28)',
+    transform: [{ rotate: '-28deg' }],
+  },
+  // Embossed branding: stamped dark gold, subtle next to the name.
+  coinBrand: {
+    position: 'absolute',
+    top: 16,
+    color: '#7d6116',
+    fontSize: 10,
     fontWeight: '800',
+    letterSpacing: 2.5,
+  },
+  coinDie: {
+    position: 'absolute',
+    top: 32,
+    fontSize: 15,
+    opacity: 0.75,
+  },
+  // The option name stays the hero: large, bold, engraved feel.
+  coinName: {
+    color: colors.ink,
+    fontSize: 22,
+    fontWeight: '900',
     textAlign: 'center',
+    paddingHorizontal: 12,
+    textShadowColor: 'rgba(122,92,20,0.55)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 1,
   },
   slotFrame: {
     backgroundColor: '#101020',
