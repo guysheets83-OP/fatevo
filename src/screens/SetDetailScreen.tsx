@@ -38,8 +38,13 @@ export interface RollOutcome {
   streak: RollStreakResult;
 }
 
-/** Shared roll logic: honors no-repeat mode, persists deck-draw state, records the daily streak. */
-export function performRoll(setId: number): RollOutcome {
+export interface BestOfOutcome extends RollOutcome {
+  /** Every roll winner in order (length N). */
+  sequence: SetOption[];
+}
+
+/** Winner picking only: honors no-repeat mode and persists deck-draw state, no streak update. */
+function pickWinnerOnly(setId: number): SetOption {
   const set = getSet(setId);
   if (!set) throw new Error('List not found.');
   const options = getOptions(setId);
@@ -54,10 +59,56 @@ export function performRoll(setId: number): RollOutcome {
     markDrawn(setId, w.id);
     winner = w;
   }
+  return winner;
+}
+
+/** Record one daily-streak step and return the result. */
+function recordStreakOnce(): RollStreakResult {
   // Daily streak: one roll per day counts; same-day repeats are idempotent.
   const { next, result } = computeRoll(getStreakState(), todayLocal());
   saveStreakState(next);
-  return { winner, streak: result };
+  return result;
+}
+
+/** Shared roll logic: honors no-repeat mode, persists deck-draw state, records the daily streak. */
+export function performRoll(setId: number): RollOutcome {
+  const winner = pickWinnerOnly(setId);
+  return { winner, streak: recordStreakOnce() };
+}
+
+/**
+ * Pure majority vote over a sequence of winner ids: most wins takes it,
+ * ties broken by the most recent win (i.e. the last roll's winner when tied).
+ */
+export function majorityWinnerId(sequence: number[]): number {
+  const counts = new Map<number, number>();
+  for (const id of sequence) counts.set(id, (counts.get(id) ?? 0) + 1);
+  let best = sequence[sequence.length - 1];
+  let bestCount = -1;
+  for (const id of sequence) {
+    const c = counts.get(id) ?? 0;
+    if (c >= bestCount) {
+      bestCount = c;
+      best = id;
+    }
+  }
+  return best;
+}
+
+/**
+ * Best-of-N: runs N independent weighted rolls in sequence. The option with
+ * the most wins takes it (tiebreak: most recent win). The daily streak is
+ * recorded exactly once, on the final result. Not offered in no-repeat mode.
+ */
+export function performBestOf(setId: number, n: 3 | 5): BestOfOutcome {
+  const set = getSet(setId);
+  if (!set) throw new Error('List not found.');
+  if (set.noRepeat) throw new Error('Best-of needs no-repeat mode off.');
+  const sequence: SetOption[] = [];
+  for (let i = 0; i < n; i++) sequence.push(pickWinnerOnly(setId));
+  const champId = majorityWinnerId(sequence.map((o) => o.id));
+  const winner = sequence.find((o) => o.id === champId) ?? sequence[sequence.length - 1];
+  return { winner, streak: recordStreakOnce(), sequence };
 }
 
 /** Screen 2 — list detail: options, weights, no-repeat toggle, big ROLL. */
@@ -69,6 +120,7 @@ export default function SetDetailScreen() {
   const [set, setSet] = useState<OptionSet | null>(null);
   const [options, setOptions] = useState<SetOption[]>([]);
   const [remaining, setRemaining] = useState<number | null>(null);
+  const [bestOf, setBestOf] = useState<1 | 3 | 5>(1);
 
   const reload = useCallback(() => {
     const s = getSet(setId);
@@ -132,14 +184,27 @@ export default function SetDetailScreen() {
 
   const handleRoll = () => {
     try {
-      const { winner, streak } = performRoll(setId);
-      navigation.navigate('Result', {
-        setId,
-        winnerId: winner.id,
-        streakCount: streak.streak,
-        milestoneTitle: streak.milestone?.title ?? null,
-        firstRollToday: streak.isFirstRollToday,
-      });
+      if (bestOf === 1) {
+        const { winner, streak } = performRoll(setId);
+        navigation.navigate('Result', {
+          setId,
+          winnerId: winner.id,
+          streakCount: streak.streak,
+          milestoneTitle: streak.milestone?.title ?? null,
+          firstRollToday: streak.isFirstRollToday,
+        });
+      } else {
+        const { winner, streak, sequence } = performBestOf(setId, bestOf);
+        navigation.navigate('Result', {
+          setId,
+          winnerId: winner.id,
+          rollSequence: sequence.map((o) => o.id),
+          bestOf,
+          streakCount: streak.streak,
+          milestoneTitle: streak.milestone?.title ?? null,
+          firstRollToday: streak.isFirstRollToday,
+        });
+      }
     } catch (e: any) {
       Alert.alert('Hold on', e?.message ?? 'Something went wrong.');
     }
@@ -201,6 +266,30 @@ export default function SetDetailScreen() {
         >
           <Text style={styles.addOptionText}>＋ Add option</Text>
         </TouchableOpacity>
+        <View style={styles.bestOfRow}>
+          {([1, 3, 5] as const).map((n) => (
+            <TouchableOpacity
+              key={n}
+              style={[
+                styles.bestOfPill,
+                bestOf === n && styles.bestOfPillActive,
+                (set?.noRepeat || !canRoll) && styles.bestOfPillDisabled,
+              ]}
+              onPress={() => setBestOf(n)}
+              disabled={set?.noRepeat || !canRoll}
+              accessibilityLabel={n === 1 ? 'Single roll' : `Best of ${n}`}
+            >
+              <Text
+                style={[styles.bestOfText, bestOf === n && styles.bestOfTextActive]}
+              >
+                {n === 1 ? 'Single' : `Best of ${n}`}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {set?.noRepeat ? (
+          <Text style={styles.bestOfHint}>Best-of needs no-repeat mode off.</Text>
+        ) : null}
         <View style={styles.rollWrap}>
           <TouchableOpacity
             style={[styles.roll, !canRoll && styles.rollDisabled]}
@@ -305,6 +394,20 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   rollHint: { textAlign: 'center', color: colors.muted, fontSize: 12 },
+  bestOfRow: { flexDirection: 'row', gap: spacing.sm },
+  bestOfPill: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  bestOfPillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  bestOfPillDisabled: { opacity: 0.4 },
+  bestOfText: { fontSize: 14, fontWeight: '700', color: colors.muted },
+  bestOfTextActive: { color: '#fff' },
+  bestOfHint: { textAlign: 'center', color: colors.muted, fontSize: 12 },
   shareButton: { paddingHorizontal: 8, paddingVertical: 6 },
   shareText: { color: colors.ink, fontSize: 16, fontWeight: '600' },
 });
