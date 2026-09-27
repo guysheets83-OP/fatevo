@@ -29,6 +29,12 @@ const WHEEL_MS = 2000;
 const ROUND_BEAT_MS = 1100;
 const WHEEL_SPINS = 4;
 
+// 12 white stars around the navy rim (radius 73 = center of the rim band).
+const RIM_STARS = Array.from({ length: 12 }, (_, i) => {
+  const a = (i * 2 * Math.PI) / 12;
+  return { left: 80 + 73 * Math.sin(a) - 6, top: 80 + 73 * Math.cos(a) - 6 };
+});
+
 const FATE_PHRASES = [
   'Fate has spoken',
   'The dice have decided',
@@ -547,9 +553,14 @@ export default function ResultScreen() {
           {mode === 'coin' && (
             <Animated.View style={[styles.coinToss, { transform: [{ translateY: coinTossY }] }]}>
               <Animated.View style={[styles.coinRim, { transform: [{ scaleX: flipX }] }]}>
+                {RIM_STARS.map((p, i) => (
+                  <Text key={i} style={[styles.rimStar, { left: p.left, top: p.top }]}>
+                    ★
+                  </Text>
+                ))}
                 <View style={styles.coinGroove}>
                   <LinearGradient
-                    colors={['#f9e88a', '#f0d060', '#d9ab2e', '#b08a24']}
+                    colors={['#ffffff', '#edf1f8', '#c9d3e4', '#9fadc6']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.coinFaceGrad}
@@ -690,31 +701,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Milled rim: antique dark-gold outer band with a darker edge.
+  // Milled rim: deep navy band with white stars and a darker edge.
   coinRim: {
     width: 160,
     height: 160,
     borderRadius: 80,
-    backgroundColor: '#7d6116',
+    backgroundColor: '#1e3a8a',
     borderWidth: 2,
-    borderColor: '#5e4a0e',
+    borderColor: '#142a66',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Second concentric ring: the groove between rim and face.
+  // White stars circling the navy rim.
+  rimStar: {
+    position: 'absolute',
+    width: 12,
+    fontSize: 10,
+    color: '#ffffff',
+    textAlign: 'center',
+    opacity: 0.95,
+  },
+  // Second concentric ring: red groove between rim and face.
   coinGroove: {
-    width: 146,
-    height: 146,
-    borderRadius: 73,
-    backgroundColor: '#a8842a',
+    width: 132,
+    height: 132,
+    borderRadius: 66,
+    backgroundColor: '#b91c1c',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Metallic face: light-gold -> deep-gold sheen.
+  // Metallic face: bright silver-white sheen.
   coinFaceGrad: {
-    width: 138,
-    height: 138,
-    borderRadius: 69,
+    width: 124,
+    height: 124,
+    borderRadius: 62,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -730,11 +750,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.28)',
     transform: [{ rotate: '-28deg' }],
   },
-  // Embossed branding: stamped dark gold, subtle next to the name.
+  // Embossed branding: stamped navy, subtle next to the name.
   coinBrand: {
     position: 'absolute',
-    top: 16,
-    color: '#7d6116',
+    top: 14,
+    color: '#1e3a8a',
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 2.5,
@@ -747,12 +767,12 @@ const styles = StyleSheet.create({
   },
   // The option name stays the hero: large, bold, engraved feel.
   coinName: {
-    color: colors.ink,
+    color: '#1d2f6e',
     fontSize: 22,
     fontWeight: '900',
     textAlign: 'center',
     paddingHorizontal: 12,
-    textShadowColor: 'rgba(122,92,20,0.55)',
+    textShadowColor: 'rgba(30,58,138,0.35)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 1,
   },
