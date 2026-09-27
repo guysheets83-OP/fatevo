@@ -4,6 +4,7 @@ import type { StreakState } from './streak';
 export interface OptionSet {
   id: number;
   name: string;
+  emoji: string;
   noRepeat: boolean;
   createdAt: number;
 }
@@ -50,16 +51,40 @@ export function getDb(): SQLite.SQLiteDatabase {
         count INTEGER NOT NULL DEFAULT 0,
         last_roll_date TEXT
       );
+      CREATE TABLE IF NOT EXISTS meta (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      );
     `);
+    // Migration: lists created before the emoji column existed.
+    const cols = db.getAllSync<any>(`PRAGMA table_info(sets)`);
+    if (!cols.some((c) => c.name === 'emoji')) {
+      db.execSync(`ALTER TABLE sets ADD COLUMN emoji TEXT NOT NULL DEFAULT '🎲'`);
+    }
   }
   return db;
+}
+
+// ---------- key/value meta (tutorial flag, etc.) ----------
+
+export function getMeta(key: string): string | null {
+  const row = getDb().getFirstSync<any>(`SELECT value FROM meta WHERE key = ?`, [key]);
+  return row ? (row.value as string | null) : null;
+}
+
+export function setMeta(key: string, value: string): void {
+  getDb().runSync(
+    `INSERT INTO meta (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [key, value]
+  );
 }
 
 // ---------- sets ----------
 
 export function getSetSummaries(): SetSummary[] {
   const rows = getDb().getAllSync<any>(
-    `SELECT s.id, s.name, s.no_repeat, s.created_at,
+    `SELECT s.id, s.name, s.emoji, s.no_repeat, s.created_at,
             (SELECT COUNT(*) FROM options o WHERE o.set_id = s.id) AS option_count
      FROM sets s
      ORDER BY s.created_at DESC`
@@ -67,6 +92,7 @@ export function getSetSummaries(): SetSummary[] {
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
+    emoji: (r.emoji as string) || '🎲',
     noRepeat: r.no_repeat === 1,
     createdAt: r.created_at,
     optionCount: r.option_count,
@@ -75,23 +101,25 @@ export function getSetSummaries(): SetSummary[] {
 
 export function getSet(id: number): OptionSet | null {
   const row = getDb().getFirstSync<any>(
-    `SELECT id, name, no_repeat, created_at FROM sets WHERE id = ?`,
+    `SELECT id, name, emoji, no_repeat, created_at FROM sets WHERE id = ?`,
     [id]
   );
   if (!row) return null;
   return {
     id: row.id,
     name: row.name,
+    emoji: (row.emoji as string) || '🎲',
     noRepeat: row.no_repeat === 1,
     createdAt: row.created_at,
   };
 }
 
-export function createSet(name: string): number {
+export function createSet(name: string, emoji: string = '🎲'): number {
   const clean = name.trim();
   if (!clean) throw new Error('Set name cannot be empty');
-  const res = getDb().runSync(`INSERT INTO sets (name, created_at) VALUES (?, ?)`, [
+  const res = getDb().runSync(`INSERT INTO sets (name, emoji, created_at) VALUES (?, ?, ?)`, [
     clean,
+    emoji || '🎲',
     Date.now(),
   ]);
   return res.lastInsertRowId;

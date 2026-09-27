@@ -29,7 +29,14 @@ export default function App() {
           headerTitleStyle: { fontWeight: '700' },
         }}
       >
-        <Stack.Screen name="Lists" component={ListsScreen} options={{ title: 'Fatevo' }} />
+        <Stack.Screen
+          name="Lists"
+          component={ListsScreen}
+          options={{
+            title: 'Fatevo',
+            headerTitleStyle: { fontSize: 26, fontWeight: '800', color: colors.ink },
+          }}
+        />
         <Stack.Screen name="SetDetail" component={SetDetailScreen} options={{ title: 'Options' }} />
         <Stack.Screen name="OptionEdit" component={OptionEditScreen} options={{ title: 'Option' }} />
         <Stack.Screen

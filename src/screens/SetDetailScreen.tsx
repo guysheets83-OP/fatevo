@@ -179,6 +179,7 @@ export default function SetDetailScreen() {
           data={options}
           keyExtractor={(o) => String(o.id)}
           contentContainerStyle={styles.list}
+          ListHeaderComponent={<Text style={styles.sectionLabel}>Your options</Text>}
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.card}
@@ -236,9 +237,17 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   toggleText: { flex: 1, paddingRight: spacing.sm },
-  toggleTitle: { fontSize: 15, fontWeight: '700', color: colors.ink },
+  toggleTitle: { fontSize: 17, fontWeight: '800', color: colors.ink },
   toggleSub: { fontSize: 12, color: colors.muted, marginTop: 2 },
   list: { padding: spacing.md, gap: spacing.sm },
+  sectionLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: colors.accent,
+    marginBottom: 2,
+  },
   card: {
     backgroundColor: colors.surface,
     borderRadius: 12,

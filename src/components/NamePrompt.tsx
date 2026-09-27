@@ -14,10 +14,18 @@ interface Props {
   title: string;
   placeholder?: string;
   initialValue?: string;
+  initialEmoji?: string;
+  /** When true, shows an emoji picker row (new lists). Rename keeps the existing emoji. */
+  showEmojiPicker?: boolean;
   saveLabel?: string;
   onCancel: () => void;
-  onSave: (value: string) => void;
+  onSave: (value: string, emoji?: string) => void;
 }
+
+export const EMOJI_CHOICES = [
+  '🎲', '🍕', '🎬', '🧹', '✈️', '🎮',
+  '🍿', '🏋️', '📚', '🎵', '🛒', '💡',
+];
 
 /** Reusable centered text-input dialog (Alert.prompt doesn't exist on Android). */
 export default function NamePrompt({
@@ -25,21 +33,41 @@ export default function NamePrompt({
   title,
   placeholder,
   initialValue = '',
+  initialEmoji = '🎲',
+  showEmojiPicker = false,
   saveLabel = 'Save',
   onCancel,
   onSave,
 }: Props) {
   const [value, setValue] = useState(initialValue);
+  const [emoji, setEmoji] = useState(initialEmoji);
 
   useEffect(() => {
-    if (visible) setValue(initialValue);
-  }, [visible, initialValue]);
+    if (visible) {
+      setValue(initialValue);
+      setEmoji(initialEmoji);
+    }
+  }, [visible, initialValue, initialEmoji]);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <View style={styles.overlay}>
         <View style={styles.card}>
           <Text style={styles.title}>{title}</Text>
+          {showEmojiPicker && (
+            <View style={styles.emojiRow}>
+              {EMOJI_CHOICES.map((e) => (
+                <TouchableOpacity
+                  key={e}
+                  style={[styles.emojiChoice, e === emoji && styles.emojiSelected]}
+                  onPress={() => setEmoji(e)}
+                  accessibilityLabel={`Emoji ${e}`}
+                >
+                  <Text style={styles.emojiText}>{e}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
           <TextInput
             style={styles.input}
             value={value}
@@ -47,7 +75,7 @@ export default function NamePrompt({
             placeholder={placeholder}
             autoFocus
             maxLength={60}
-            onSubmitEditing={() => value.trim() && onSave(value)}
+            onSubmitEditing={() => value.trim() && onSave(value, emoji)}
             returnKeyType="done"
           />
           <View style={styles.row}>
@@ -57,7 +85,7 @@ export default function NamePrompt({
             <TouchableOpacity
               style={[styles.button, styles.save, !value.trim() && styles.saveDisabled]}
               disabled={!value.trim()}
-              onPress={() => onSave(value)}
+              onPress={() => onSave(value, emoji)}
             >
               <Text style={styles.saveText}>{saveLabel}</Text>
             </TouchableOpacity>
@@ -86,6 +114,27 @@ const styles = StyleSheet.create({
     color: colors.ink,
     marginBottom: spacing.sm,
   },
+  emojiRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: spacing.md,
+  },
+  emojiChoice: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+  },
+  emojiSelected: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accentSoft,
+  },
+  emojiText: { fontSize: 24 },
   input: {
     borderWidth: 1,
     borderColor: colors.border,

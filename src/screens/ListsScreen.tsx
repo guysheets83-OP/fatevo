@@ -1,6 +1,7 @@
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useCallback, useLayoutEffect, useState } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
+import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -10,13 +11,41 @@ import {
   View,
 } from 'react-native';
 import NamePrompt from '../components/NamePrompt';
-import { createSet, deleteSet, getSetSummaries, getStreakState, renameSet } from '../db';
+import Tutorial from '../components/Tutorial';
+import {
+  createSet,
+  deleteSet,
+  getMeta,
+  getSetSummaries,
+  getStreakState,
+  renameSet,
+  setMeta,
+} from '../db';
 import type { RootStackParamList } from '../navigation';
-import { titleForStreak } from '../streak';
+import { MILESTONES, titleForStreak } from '../streak';
 import { colors, spacing } from '../theme';
 import type { SetSummary } from '../db';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Lists'>;
+
+const TUTORIAL_KEY = 'tutorial_seen';
+
+const FATE_TIPS = [
+  'Give favorites better odds — set a weight up to ×5 on the options you secretly hope win.',
+  'No-repeat mode deals every option once before reshuffling — perfect for chores.',
+  'Long-press any list to rename or delete it.',
+  'Roll once a day to grow your streak — miss a day and it resets to zero!',
+  'Share a list with friends, so everyone argues with fate instead of you.',
+  'Stuck between two? Fewer options means faster fate.',
+  'Milestones await: 7 days makes you a Fate Apprentice, 100 a Fate Master.',
+];
+
+/** Pick today's tip by day-of-year so it rotates daily. */
+function tipOfTheDay(now: Date = new Date()): string {
+  const start = new Date(now.getFullYear(), 0, 1);
+  const dayOfYear = Math.floor((now.getTime() - start.getTime()) / 86_400_000);
+  return FATE_TIPS[dayOfYear % FATE_TIPS.length];
+}
 
 /** Screen 1 — My Lists (home). */
 export default function ListsScreen() {
@@ -26,12 +55,20 @@ export default function ListsScreen() {
   const [editing, setEditing] = useState<SetSummary | null>(null);
   const [streakCount, setStreakCount] = useState(0);
   const [streakTitle, setStreakTitle] = useState<string | null>(null);
+  const [tutorialVisible, setTutorialVisible] = useState(false);
+  const tutorialChecked = useRef(false);
 
   const reload = useCallback(() => {
     setSets(getSetSummaries());
     const s = getStreakState();
     setStreakCount(s.count);
     setStreakTitle(titleForStreak(s.count));
+    if (!tutorialChecked.current) {
+      tutorialChecked.current = true;
+      if (getMeta(TUTORIAL_KEY) !== '1') {
+        setTutorialVisible(true);
+      }
+    }
   }, []);
 
   useFocusEffect(reload);
@@ -53,12 +90,12 @@ export default function ListsScreen() {
     });
   }, [navigation]);
 
-  const handleSave = (name: string) => {
+  const handleSave = (name: string, emoji?: string) => {
     try {
       if (editing) {
         renameSet(editing.id, name);
       } else {
-        const id = createSet(name);
+        const id = createSet(name, emoji);
         setPromptVisible(false);
         reload();
         navigation.navigate('SetDetail', { setId: id });
@@ -105,22 +142,36 @@ export default function ListsScreen() {
     ]);
   };
 
+  const nextMilestone = MILESTONES.find((m) => m.days > streakCount) ?? null;
+  const progress = nextMilestone ? Math.min(1, streakCount / nextMilestone.days) : 1;
+
   return (
     <View style={styles.container}>
-      <View style={styles.streakBanner}>
+      <LinearGradient
+        colors={['#2e2e5c', '#6e5a1e']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.streakBanner}
+      >
         <Text style={styles.streakFlame}>🔥</Text>
         <View style={styles.streakText}>
           <Text style={styles.streakCount}>
             {streakCount > 0 ? `${streakCount}-day streak` : 'Start your streak'}
           </Text>
           <Text style={styles.streakSub}>
-            {streakTitle ??
-              (streakCount > 0
-                ? 'Roll daily to keep it alive'
-                : 'Roll today to light the flame')}
+            {nextMilestone
+              ? streakCount > 0
+                ? `${nextMilestone.days - streakCount} days to ${nextMilestone.title}`
+                : 'Roll today to light the flame'
+              : `${streakTitle ?? 'Fate Master'} — legendary! 👑`}
           </Text>
+          {nextMilestone && streakCount > 0 && (
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+            </View>
+          )}
         </View>
-      </View>
+      </LinearGradient>
       {sets.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No lists yet</Text>
@@ -140,7 +191,8 @@ export default function ListsScreen() {
               onLongPress={() => handleLongPress(item)}
               delayLongPress={400}
             >
-              <View>
+              <Text style={styles.cardEmoji}>{item.emoji}</Text>
+              <View style={styles.cardBody}>
                 <Text style={styles.cardTitle}>{item.name}</Text>
                 <Text style={styles.cardSub}>
                   {item.optionCount} {item.optionCount === 1 ? 'option' : 'options'}
@@ -150,17 +202,30 @@ export default function ListsScreen() {
               <Text style={styles.chevron}>›</Text>
             </TouchableOpacity>
           )}
+          ListFooterComponent={
+            <View style={styles.tipCard}>
+              <Text style={styles.tipIcon}>💡</Text>
+              <Text style={styles.tipText}>{tipOfTheDay()}</Text>
+            </View>
+          }
         />
       )}
-      <Text style={styles.hint}>Long-press a list to rename or delete it.</Text>
       <NamePrompt
         visible={promptVisible}
         title={editing ? 'Rename list' : 'New list'}
         placeholder="e.g. Friday dinner"
         initialValue={editing?.name ?? ''}
+        showEmojiPicker={!editing}
         saveLabel={editing ? 'Rename' : 'Create'}
         onCancel={() => setPromptVisible(false)}
         onSave={handleSave}
+      />
+      <Tutorial
+        visible={tutorialVisible}
+        onDone={() => {
+          setMeta(TUTORIAL_KEY, '1');
+          setTutorialVisible(false);
+        }}
       />
     </View>
   );
@@ -171,19 +236,27 @@ const styles = StyleSheet.create({
   streakBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
     margin: spacing.md,
     marginBottom: 0,
-    padding: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
+    padding: spacing.md,
+    borderRadius: 16,
   },
-  streakFlame: { fontSize: 26, marginRight: spacing.sm },
+  streakFlame: { fontSize: 44, marginRight: spacing.md },
   streakText: { flex: 1 },
-  streakCount: { fontSize: 16, fontWeight: '800', color: colors.ink },
-  streakSub: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  streakCount: { fontSize: 20, fontWeight: '800', color: '#fff' },
+  streakSub: { fontSize: 13, color: '#ffffffcc', marginTop: 2 },
+  progressTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ffffff33',
+    marginTop: spacing.sm,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 4,
+    backgroundColor: colors.accent,
+  },
   list: { padding: spacing.md, gap: spacing.sm },
   card: {
     backgroundColor: colors.surface,
@@ -191,17 +264,29 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     borderWidth: 1,
     borderColor: colors.border,
   },
+  cardEmoji: { fontSize: 34, marginRight: spacing.md },
+  cardBody: { flex: 1 },
   cardTitle: { fontSize: 17, fontWeight: '700', color: colors.ink },
   cardSub: { fontSize: 13, color: colors.muted, marginTop: 2 },
   chevron: { fontSize: 24, color: colors.muted },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.lg },
   emptyTitle: { fontSize: 20, fontWeight: '700', color: colors.ink, marginBottom: spacing.xs },
   emptyText: { fontSize: 15, color: colors.muted, textAlign: 'center' },
-  hint: { textAlign: 'center', color: colors.muted, fontSize: 12, paddingBottom: spacing.md },
+  tipCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.accentSoft,
+    borderRadius: 12,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  tipIcon: { fontSize: 22, marginRight: spacing.sm },
+  tipText: { flex: 1, fontSize: 14, color: colors.ink, lineHeight: 20 },
   addButton: {
     width: 36,
     height: 36,
