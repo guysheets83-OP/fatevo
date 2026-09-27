@@ -10,6 +10,7 @@ type Props = {
   winnerName: string;
   options: string[];
   phrase: string;
+  category: string;
 };
 
 /**
@@ -17,7 +18,7 @@ type Props = {
  * off-screen and captured with react-native-view-shot when the user picks
  * "Share image card".
  */
-export default function ShareCard({ winnerName, options, phrase }: Props) {
+export default function ShareCard({ winnerName, options, phrase, category }: Props) {
   const shown = options.length > 10 ? options.slice(0, 10) : options;
   const more = options.length - shown.length;
   const optionsText =
@@ -38,6 +39,15 @@ export default function ShareCard({ winnerName, options, phrase }: Props) {
       </View>
 
       <Text style={styles.phrase}>{phrase}</Text>
+
+      <Text
+        style={styles.category}
+        numberOfLines={2}
+        adjustsFontSizeToFit
+        minimumFontScale={0.6}
+      >
+        {category}
+      </Text>
 
       <View style={styles.middle}>
         <Text style={styles.kicker}>FATE CHOSE</Text>
@@ -97,6 +107,15 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     marginTop: 10,
+  },
+  // The category being decided, e.g. "🎶 Who chooses the music".
+  category: {
+    color: '#ffffff',
+    fontSize: 26,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginTop: 14,
+    paddingHorizontal: 12,
   },
   middle: {
     flex: 1,

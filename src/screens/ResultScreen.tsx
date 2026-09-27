@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import * as Sharing from 'expo-sharing';
 import ViewShot, { type ViewShotRef } from 'react-native-view-shot';
-import { getOption, getOptions, type SetOption } from '../db';
+import { getOption, getOptions, getSet, type SetOption } from '../db';
 import type { RootStackParamList } from '../navigation';
 import { colors, spacing } from '../theme';
 import ShareCard from '../components/ShareCard';
@@ -443,10 +443,16 @@ export default function ResultScreen() {
 
   const shareOptionNames = () => getOptions(setId).map((o) => o.name);
 
+  // The category being decided, e.g. "🎶 Who chooses the music".
+  const shareCategory = () => {
+    const set = getSet(setId);
+    return set ? `${set.emoji} ${set.name}` : '';
+  };
+
   const buildShareText = () => {
     const name = shareWinnerName();
     const options = shareOptionNames().join(', ');
-    return `🎲 Fate chose ${name.toUpperCase()}!\nThe options were: ${options}\nCan't pick? Fatevo.`;
+    return `${shareCategory()}\n🎲 Fate chose ${name.toUpperCase()}!\nThe options were: ${options}\nCan't pick? Fatevo.`;
   };
 
   const shareAsText = () => {
@@ -524,6 +530,7 @@ export default function ResultScreen() {
             winnerName={shareWinnerName()}
             options={shareOptionNames()}
             phrase={phrase}
+            category={shareCategory()}
           />
         </View>
       </ViewShot>
