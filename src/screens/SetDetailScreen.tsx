@@ -3,7 +3,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import React, { useCallback, useLayoutEffect, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -25,7 +25,7 @@ import {
   type OptionSet,
   type SetOption,
 } from '../db';
-import { pickNoRepeat, pickWinner } from '../roll';
+import { pickKnockout, pickNoRepeat, pickWinner } from '../roll';
 import { computeRoll, todayLocal, type RollStreakResult } from '../streak';
 import type { RootStackParamList } from '../navigation';
 import { colors, spacing } from '../theme';
@@ -96,19 +96,47 @@ export function majorityWinnerId(sequence: number[]): number {
 }
 
 /**
- * Best-of-N: runs N independent weighted rolls in sequence. The option with
+ * Best-of-3: runs 3 independent weighted rolls in sequence. The option with
  * the most wins takes it (tiebreak: most recent win). The daily streak is
  * recorded exactly once, on the final result. Not offered in no-repeat mode.
  */
-export function performBestOf(setId: number, n: 3 | 5): BestOfOutcome {
+export function performBestOf(setId: number): BestOfOutcome {
   const set = getSet(setId);
   if (!set) throw new Error('List not found.');
   if (set.noRepeat) throw new Error('Best-of needs no-repeat mode off.');
   const sequence: SetOption[] = [];
-  for (let i = 0; i < n; i++) sequence.push(pickWinnerOnly(setId));
+  for (let i = 0; i < 3; i++) sequence.push(pickWinnerOnly(setId));
   const champId = majorityWinnerId(sequence.map((o) => o.id));
   const winner = sequence.find((o) => o.id === champId) ?? sequence[sequence.length - 1];
   return { winner, streak: recordStreakOnce(), sequence };
+}
+
+export interface EliminationOutcome extends RollOutcome {
+  /** Every option id in elimination order — the champion is last. */
+  knockoutOrder: number[];
+}
+
+/**
+ * Elimination: for 5+ options. Each round knocks out one option — a weighted
+ * draw with INVERTED weights over the remaining pool, so favorites survive
+ * longer — until one champion remains. The daily streak is recorded exactly
+ * once, on the champion. Manages its own shrinking pool, so it stays
+ * available even when no-repeat mode is on.
+ */
+export function performElimination(setId: number): EliminationOutcome {
+  const set = getSet(setId);
+  if (!set) throw new Error('List not found.');
+  let remaining = getOptions(setId);
+  if (remaining.length < 5) throw new Error('Elimination needs at least 5 options.');
+  const knockoutOrder: number[] = [];
+  while (remaining.length > 1) {
+    const out = pickKnockout(remaining);
+    knockoutOrder.push(out.id);
+    remaining = remaining.filter((o) => o.id !== out.id);
+  }
+  const champion = remaining[0];
+  knockoutOrder.push(champion.id);
+  return { winner: champion, streak: recordStreakOnce(), knockoutOrder };
 }
 
 /** Screen 2 — list detail: options, weights, no-repeat toggle, big ROLL. */
@@ -120,7 +148,8 @@ export default function SetDetailScreen() {
   const [set, setSet] = useState<OptionSet | null>(null);
   const [options, setOptions] = useState<SetOption[]>([]);
   const [remaining, setRemaining] = useState<number | null>(null);
-  const [bestOf, setBestOf] = useState<1 | 3 | 5>(1);
+  /** Roll mode: Single always; Best of 3 for 2-4 options; Elimination for 5+. */
+  const [rollMode, setRollMode] = useState<'single' | 'best3' | 'elimination'>('single');
 
   const reload = useCallback(() => {
     const s = getSet(setId);
@@ -141,6 +170,20 @@ export default function SetDetailScreen() {
   }, [setId, navigation]);
 
   useFocusEffect(reload);
+
+  // Keep the selected mode valid as the option count / no-repeat changes:
+  // best-of-3 only exists for 2-4 options with no-repeat off; elimination
+  // only exists for 5+ options.
+  useEffect(() => {
+    if (
+      rollMode === 'best3' &&
+      (options.length < 2 || options.length > 4 || set?.noRepeat)
+    ) {
+      setRollMode('single');
+    } else if (rollMode === 'elimination' && options.length < 5) {
+      setRollMode('single');
+    }
+  }, [options.length, set?.noRepeat, rollMode]);
 
   useLayoutEffect(() => {
     navigation.setOptions({ title: set?.name ?? 'Options' });
@@ -183,26 +226,35 @@ export default function SetDetailScreen() {
   }, [navigation, shareList]);
 
   const handleRoll = () => {
+    const streakParams = (streak: RollStreakResult) => ({
+      streakCount: streak.streak,
+      milestoneTitle: streak.milestone?.title ?? null,
+      firstRollToday: streak.isFirstRollToday,
+    });
     try {
-      if (bestOf === 1) {
-        const { winner, streak } = performRoll(setId);
+      if (rollMode === 'elimination') {
+        const { winner, streak, knockoutOrder } = performElimination(setId);
         navigation.navigate('Result', {
           setId,
           winnerId: winner.id,
-          streakCount: streak.streak,
-          milestoneTitle: streak.milestone?.title ?? null,
-          firstRollToday: streak.isFirstRollToday,
+          knockoutOrder,
+          ...streakParams(streak),
         });
-      } else {
-        const { winner, streak, sequence } = performBestOf(setId, bestOf);
+      } else if (rollMode === 'best3') {
+        const { winner, streak, sequence } = performBestOf(setId);
         navigation.navigate('Result', {
           setId,
           winnerId: winner.id,
           rollSequence: sequence.map((o) => o.id),
-          bestOf,
-          streakCount: streak.streak,
-          milestoneTitle: streak.milestone?.title ?? null,
-          firstRollToday: streak.isFirstRollToday,
+          bestOf: 3,
+          ...streakParams(streak),
+        });
+      } else {
+        const { winner, streak } = performRoll(setId);
+        navigation.navigate('Result', {
+          setId,
+          winnerId: winner.id,
+          ...streakParams(streak),
         });
       }
     } catch (e: any) {
@@ -267,27 +319,63 @@ export default function SetDetailScreen() {
           <Text style={styles.addOptionText}>＋ Add option</Text>
         </TouchableOpacity>
         <View style={styles.bestOfRow}>
-          {([1, 3, 5] as const).map((n) => (
+          <TouchableOpacity
+            style={[
+              styles.bestOfPill,
+              rollMode === 'single' && styles.bestOfPillActive,
+              !canRoll && styles.bestOfPillDisabled,
+            ]}
+            onPress={() => setRollMode('single')}
+            disabled={!canRoll}
+            accessibilityLabel="Single roll"
+          >
+            <Text
+              style={[styles.bestOfText, rollMode === 'single' && styles.bestOfTextActive]}
+            >
+              Single
+            </Text>
+          </TouchableOpacity>
+          {options.length >= 2 && options.length <= 4 && (
             <TouchableOpacity
-              key={n}
               style={[
                 styles.bestOfPill,
-                bestOf === n && styles.bestOfPillActive,
+                rollMode === 'best3' && styles.bestOfPillActive,
                 (set?.noRepeat || !canRoll) && styles.bestOfPillDisabled,
               ]}
-              onPress={() => setBestOf(n)}
+              onPress={() => setRollMode('best3')}
               disabled={set?.noRepeat || !canRoll}
-              accessibilityLabel={n === 1 ? 'Single roll' : `Best of ${n}`}
+              accessibilityLabel="Best of 3"
             >
               <Text
-                style={[styles.bestOfText, bestOf === n && styles.bestOfTextActive]}
+                style={[styles.bestOfText, rollMode === 'best3' && styles.bestOfTextActive]}
               >
-                {n === 1 ? 'Single' : `Best of ${n}`}
+                Best of 3
               </Text>
             </TouchableOpacity>
-          ))}
+          )}
+          {options.length >= 5 && (
+            <TouchableOpacity
+              style={[
+                styles.bestOfPill,
+                rollMode === 'elimination' && styles.bestOfPillActive,
+                !canRoll && styles.bestOfPillDisabled,
+              ]}
+              onPress={() => setRollMode('elimination')}
+              disabled={!canRoll}
+              accessibilityLabel="Elimination mode"
+            >
+              <Text
+                style={[
+                  styles.bestOfText,
+                  rollMode === 'elimination' && styles.bestOfTextActive,
+                ]}
+              >
+                Elimination
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
-        {set?.noRepeat ? (
+        {set?.noRepeat && options.length < 5 ? (
           <Text style={styles.bestOfHint}>Best-of needs no-repeat mode off.</Text>
         ) : null}
         <View style={styles.rollWrap}>

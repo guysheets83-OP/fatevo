@@ -36,7 +36,6 @@ export interface NoRepeatResult<T> {
   /** True when every option had already won and the deck was reshuffled. */
   poolWasReset: boolean;
 }
-
 /**
  * No-repeat ("deck draw") mode: each option wins once before any repeats,
  * like drawing cards from a deck. `drawnIds` are the ids already drawn.
@@ -54,4 +53,22 @@ export function pickNoRepeat<T extends WeightedItem>(
     poolWasReset = true;
   }
   return { winner: pickWinner(pool, rng), poolWasReset };
+}
+
+/**
+ * Knockout draw: pick one item to ELIMINATE with probability proportional to
+ * (6 - weight), so a weight-5 favorite is 5x more likely to survive than a
+ * weight-1 long shot. Weights are 1-5, so inverted weights are 5-1.
+ */
+export function pickKnockout<T extends WeightedItem>(
+  items: T[],
+  rng: () => number = Math.random
+): T {
+  if (items.length === 0) {
+    throw new Error('pickKnockout: no items to eliminate from');
+  }
+  return pickWinner(
+    items.map((it) => ({ ...it, weight: 6 - Math.max(0, it.weight) })),
+    rng
+  );
 }

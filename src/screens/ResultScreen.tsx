@@ -11,10 +11,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { getOption, getOptions } from '../db';
+import { getOption, getOptions, type SetOption } from '../db';
 import type { RootStackParamList } from '../navigation';
 import { colors, spacing } from '../theme';
-import { performBestOf, performRoll } from './SetDetailScreen';
+import { performBestOf, performElimination, performRoll } from './SetDetailScreen';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Result'>;
 type Route = RouteProp<RootStackParamList, 'Result'>;
@@ -63,11 +63,13 @@ export default function ResultScreen() {
   const [mode, setMode] = useState<AnimMode>('wheel');
   const [roundIdx, setRoundIdx] = useState(-1);
   const [roundBeat, setRoundBeat] = useState<{ index: number; name: string } | null>(null);
-  const [champion, setChampion] = useState<{
-    name: string;
-    wins: number;
-    total: number;
-  } | null>(null);
+  const [champion, setChampion] = useState<{ name: string; detail: string } | null>(
+    null
+  );
+  const [elimOrder, setElimOrder] = useState<number[] | null>(
+    route.params.knockoutOrder ?? null
+  );
+  const [knockout, setKnockout] = useState<{ index: number; name: string } | null>(null);
   const [coinFace, setCoinFace] = useState('');
   const [reelNames, setReelNames] = useState<string[]>([]);
   const [slotIdx, setSlotIdx] = useState(0);
@@ -94,19 +96,24 @@ export default function ResultScreen() {
    * spins with a decelerating ease and lands the winner's segment under the
    * gold pointer. The winner is predetermined by the roll logic — the
    * animation just lands on it.
+   *
+   * `pool` restricts the wheel/disc to a subset of the list's options
+   * (elimination rounds); `modeOverride` forces the wheel even for small
+   * pools, so every elimination round spins the full wheel.
    */
   const playAnimation = useCallback(
-    (id: number, onLanded: () => void) => {
+    (id: number, onLanded: () => void, pool?: SetOption[], modeOverride?: AnimMode) => {
       clearTimers();
       wheelRot.stopAnimation();
-      const options = getOptions(setId);
+      const options = pool ?? getOptions(setId);
       const names = options.map((o) => o.name);
       const winner = getOption(id);
       if (!winner || names.length === 0) {
         navigation.goBack();
         return;
       }
-      const m: AnimMode = names.length <= 2 ? 'coin' : names.length === 3 ? 'slot' : 'wheel';
+      const m: AnimMode =
+        modeOverride ?? (names.length <= 2 ? 'coin' : names.length === 3 ? 'slot' : 'wheel');
       setMode(m);
       setReelNames(names);
       setSlotIdx(0);
@@ -171,6 +178,8 @@ export default function ResultScreen() {
       setRoundIdx(-1);
       setRoundBeat(null);
       setChampion(null);
+      setElimOrder(null);
+      setKnockout(null);
       setRevealed(false);
       setPhrase(randomPhrase());
       scale.setValue(0.6);
@@ -195,6 +204,8 @@ export default function ResultScreen() {
       setRevealed(false);
       setChampion(null);
       setRoundBeat(null);
+      setElimOrder(null);
+      setKnockout(null);
       setPhrase(randomPhrase());
       let i = 0;
       const next = () => {
@@ -202,7 +213,10 @@ export default function ResultScreen() {
         if (i >= ids.length) {
           const champ = getOption(championId);
           const wins = ids.filter((x) => x === championId).length;
-          setChampion({ name: champ?.name ?? '…', wins, total: ids.length });
+          setChampion({
+            name: champ?.name ?? '…',
+            detail: `${wins} of ${ids.length} rounds`,
+          });
           setRoundIdx(-1);
           setRevealed(true);
           scale.setValue(0.6);
@@ -230,10 +244,70 @@ export default function ResultScreen() {
     [playAnimation, scale]
   );
 
+  /**
+   * Elimination mode (5+ options): every round spins the full wheel and
+   * knocks one option OUT — the wheel lands on the eliminated option, a
+   * brief "❌ <name> is out!" beat shows, and it leaves the wheel. When one
+   * option remains, the champion reveal ("Last one standing"). The knockout
+   * order is predetermined by performElimination — the animation just
+   * plays it out.
+   */
+  const playElimination = useCallback(
+    (order: number[], championId: number) => {
+      setRevealed(false);
+      setChampion(null);
+      setRoundBeat(null);
+      setKnockout(null);
+      setSeq(null);
+      setPhrase(randomPhrase());
+      let pool = getOptions(setId);
+      let i = 0;
+      const next = () => {
+        if (!alive.current) return;
+        if (i >= order.length - 1) {
+          const champ = getOption(championId);
+          setChampion({ name: champ?.name ?? '…', detail: 'Last one standing' });
+          setRoundIdx(-1);
+          setRevealed(true);
+          scale.setValue(0.6);
+          Animated.spring(scale, { toValue: 1, friction: 5, useNativeDriver: true }).start();
+          return;
+        }
+        const outId = order[i];
+        const idx = i;
+        setRoundIdx(idx);
+        playAnimation(
+          outId,
+          () => {
+            const opt = getOption(outId);
+            setKnockout({ index: idx, name: opt?.name ?? '…' });
+            timers.current.push(
+              setTimeout(() => {
+                if (!alive.current) return;
+                setKnockout(null);
+                pool = pool.filter((o) => o.id !== outId);
+                i += 1;
+                next();
+              }, ROUND_BEAT_MS)
+            );
+          },
+          pool,
+          'wheel'
+        );
+      };
+      next();
+    },
+    [playAnimation, scale, setId]
+  );
+
   useEffect(() => {
     alive.current = true;
+    const ko = route.params.knockoutOrder;
     const ids = route.params.rollSequence;
-    if (ids && ids.length > 1) {
+    if (ko && ko.length > 1) {
+      setElimOrder(ko);
+      playElimination(ko, route.params.winnerId);
+    } else if (ids && ids.length > 1) {
       playRounds(ids, route.params.winnerId);
     } else {
       runSingleReveal(route.params.winnerId);
@@ -259,11 +333,23 @@ export default function ResultScreen() {
 
   const rollAgain = () => {
     try {
-      if (bestOfMode > 1) {
-        const { winner, streak, sequence } = performBestOf(setId, bestOfMode === 5 ? 5 : 3);
+      if (elimOrder) {
+        const { winner, streak, knockoutOrder } = performElimination(setId);
+        setWinnerId(winner.id);
+        setElimOrder(knockoutOrder);
+        setSeq(null);
+        setStreakInfo({
+          streakCount: streak.streak,
+          milestoneTitle: streak.milestone?.title ?? null,
+          firstRollToday: streak.isFirstRollToday,
+        });
+        playElimination(knockoutOrder, winner.id);
+      } else if (bestOfMode > 1) {
+        const { winner, streak, sequence } = performBestOf(setId);
         const ids = sequence.map((o) => o.id);
         setWinnerId(winner.id);
         setSeq(ids);
+        setElimOrder(null);
         setStreakInfo({
           streakCount: streak.streak,
           milestoneTitle: streak.milestone?.title ?? null,
@@ -274,6 +360,7 @@ export default function ResultScreen() {
         const { winner, streak } = performRoll(setId);
         setWinnerId(winner.id);
         setSeq(null);
+        setElimOrder(null);
         setStreakInfo({
           streakCount: streak.streak,
           milestoneTitle: streak.milestone?.title ?? null,
@@ -301,9 +388,13 @@ export default function ResultScreen() {
     ? champion
       ? '🏆 Champion crowned'
       : `🎲 ${phrase}`
-    : roundBeat || roundIdx >= 0
-      ? `🎲 Round ${(roundBeat?.index ?? roundIdx) + 1} of ${seq?.length ?? '?'}…`
-      : '🎲 Rolling…';
+    : elimOrder
+      ? roundIdx < 0
+        ? '🎡 Spinning up…'
+        : `🎡 Round ${roundIdx + 1} — ${elimOrder.length - roundIdx} remain…`
+      : roundBeat || roundIdx >= 0
+        ? `🎲 Round ${(roundBeat?.index ?? roundIdx) + 1} of ${seq?.length ?? '?'}…`
+        : '🎲 Rolling…';
 
   const wheelSpin = wheelRot.interpolate({
     inputRange: [0, 360],
@@ -333,6 +424,15 @@ export default function ResultScreen() {
           <Text style={styles.miniLabel}>Round {roundBeat.index + 1} winner</Text>
           <Text style={styles.winner} numberOfLines={3}>
             {roundBeat.name}
+          </Text>
+        </View>
+      )}
+
+      {!revealed && knockout && (
+        <View style={[styles.winnerCard, styles.miniCard]}>
+          <Text style={styles.miniLabel}>Round {knockout.index + 1}</Text>
+          <Text style={styles.winner} numberOfLines={3}>
+            ❌ {knockout.name} is out!
           </Text>
         </View>
       )}
@@ -406,9 +506,7 @@ export default function ResultScreen() {
             {champion ? champion.name : displayName}
           </Text>
           {champion && (
-            <Text style={styles.champSub}>
-              {champion.wins} of {champion.total} rounds
-            </Text>
+            <Text style={styles.champSub}>{champion.detail}</Text>
           )}
         </Animated.View>
       )}

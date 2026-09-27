@@ -2,7 +2,7 @@ const path = require('path');
 const modPath = process.argv[2]
   ? path.resolve(process.cwd(), process.argv[2])
   : '/tmp/fatevo-test/roll.js';
-const { pickWinner, pickNoRepeat } = require(modPath);
+const { pickWinner, pickNoRepeat, pickKnockout } = require(modPath);
 
 // Deterministic seeded RNG (LCG) so results are reproducible.
 function seeded(seed) {
@@ -86,6 +86,26 @@ function assert(cond, msg) {
 {
   const w = pickWinner([{ id: 9, weight: 2 }], seeded(1));
   assert(w.id === 9, 'single option always wins');
+}
+
+// 7. pickKnockout: inverted weights — weight-1 is knocked out ~5x more
+// often than weight-5 (inverted weights 5 vs 1)
+{
+  const items = [{ id: 'light', weight: 1 }, { id: 'heavy', weight: 5 }];
+  const rng = seeded(11);
+  let light = 0, heavy = 0;
+  for (let i = 0; i < 30000; i++) (pickKnockout(items, rng).id === 'light' ? light++ : heavy++);
+  const ratio = light / heavy;
+  assert(Math.abs(ratio - 5) < 0.5, `knockout favors the light option (ratio=${ratio.toFixed(3)}, light=${light}, heavy=${heavy})`);
+}
+
+// 8. pickKnockout errors + never eliminates the only option wrongly
+{
+  let threw = false;
+  try { pickKnockout([]); } catch { threw = true; }
+  assert(threw, 'pickKnockout throws on empty array');
+  const solo = pickKnockout([{ id: 7, weight: 3 }], seeded(2));
+  assert(solo.id === 7, 'pickKnockout returns the sole option');
 }
 
 console.log(failures === 0 ? '\nALL TESTS PASSED' : `\n${failures} FAILURES`);
