@@ -39,8 +39,14 @@ export interface RollOutcome {
 }
 
 export interface BestOfOutcome extends RollOutcome {
-  /** Every roll winner in order (length N). */
+  /** Every roll winner in order (length 3). */
   sequence: SetOption[];
+  /**
+   * Present when the 3 rounds produced no plurality winner (top round-win
+   * count shared by 2+ options). One weighted sudden-death spin among the
+   * tied options decides it — a single spin always yields exactly one winner.
+   */
+  suddenDeath?: { tied: SetOption[]; winner: SetOption };
 }
 
 /** Winner picking only: honors no-repeat mode and persists deck-draw state, no streak update. */
@@ -77,28 +83,11 @@ export function performRoll(setId: number): RollOutcome {
 }
 
 /**
- * Pure majority vote over a sequence of winner ids: most wins takes it,
- * ties broken by the most recent win (i.e. the last roll's winner when tied).
- */
-export function majorityWinnerId(sequence: number[]): number {
-  const counts = new Map<number, number>();
-  for (const id of sequence) counts.set(id, (counts.get(id) ?? 0) + 1);
-  let best = sequence[sequence.length - 1];
-  let bestCount = -1;
-  for (const id of sequence) {
-    const c = counts.get(id) ?? 0;
-    if (c >= bestCount) {
-      bestCount = c;
-      best = id;
-    }
-  }
-  return best;
-}
-
-/**
  * Best-of-3: runs 3 independent weighted rolls in sequence. The option with
- * the most wins takes it (tiebreak: most recent win). The daily streak is
- * recorded exactly once, on the final result. Not offered in no-repeat mode.
+ * the most round wins takes it. If the top win count is shared by 2+ options
+ * (e.g. 1-1-1), sudden death: one more weighted spin among ONLY the tied
+ * options, and that spin's winner is the champion. The daily streak is
+ * recorded exactly once, on the final champion. Not offered in no-repeat mode.
  */
 export function performBestOf(setId: number): BestOfOutcome {
   const set = getSet(setId);
@@ -106,9 +95,23 @@ export function performBestOf(setId: number): BestOfOutcome {
   if (set.noRepeat) throw new Error('Best-of needs no-repeat mode off.');
   const sequence: SetOption[] = [];
   for (let i = 0; i < 3; i++) sequence.push(pickWinnerOnly(setId));
-  const champId = majorityWinnerId(sequence.map((o) => o.id));
-  const winner = sequence.find((o) => o.id === champId) ?? sequence[sequence.length - 1];
-  return { winner, streak: recordStreakOnce(), sequence };
+  const counts = new Map<number, number>();
+  for (const o of sequence) counts.set(o.id, (counts.get(o.id) ?? 0) + 1);
+  const top = Math.max(...counts.values());
+  const tiedIds = [...counts.keys()].filter((id) => counts.get(id) === top);
+  if (tiedIds.length === 1) {
+    const winner =
+      sequence.find((o) => o.id === tiedIds[0]) ?? sequence[sequence.length - 1];
+    return { winner, streak: recordStreakOnce(), sequence };
+  }
+  const tied = getOptions(setId).filter((o) => tiedIds.includes(o.id));
+  const sdWinner = pickWinner(tied);
+  return {
+    winner: sdWinner,
+    streak: recordStreakOnce(),
+    sequence,
+    suddenDeath: { tied, winner: sdWinner },
+  };
 }
 
 export interface EliminationOutcome extends RollOutcome {
@@ -241,12 +244,15 @@ export default function SetDetailScreen() {
           ...streakParams(streak),
         });
       } else if (rollMode === 'best3') {
-        const { winner, streak, sequence } = performBestOf(setId);
+        const { winner, streak, sequence, suddenDeath } = performBestOf(setId);
         navigation.navigate('Result', {
           setId,
           winnerId: winner.id,
           rollSequence: sequence.map((o) => o.id),
           bestOf: 3,
+          suddenDeathTiedIds: suddenDeath
+            ? suddenDeath.tied.map((o) => o.id)
+            : undefined,
           ...streakParams(streak),
         });
       } else {

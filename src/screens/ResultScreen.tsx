@@ -70,6 +70,8 @@ export default function ResultScreen() {
     route.params.knockoutOrder ?? null
   );
   const [knockout, setKnockout] = useState<{ index: number; name: string } | null>(null);
+  /** True while the best-of sudden-death spin is playing (for the kicker). */
+  const [suddenDeath, setSuddenDeath] = useState(false);
   const [coinFace, setCoinFace] = useState('');
   const [reelNames, setReelNames] = useState<string[]>([]);
   const [slotIdx, setSlotIdx] = useState(0);
@@ -180,6 +182,7 @@ export default function ResultScreen() {
       setChampion(null);
       setElimOrder(null);
       setKnockout(null);
+      setSuddenDeath(false);
       setRevealed(false);
       setPhrase(randomPhrase());
       scale.setValue(0.6);
@@ -195,22 +198,45 @@ export default function ResultScreen() {
 
   /**
    * Best-of mode: every round plays the FULL animation, then a brief
-   * "Round X winner" beat, then the next round. After all rounds, the
-   * champion reveal — plurality winner (most round wins), tiebreak already
-   * resolved by majorityWinnerId in performBestOf.
+   * "Round X winner" beat, then the next round. After all rounds, either the
+   * champion reveal (plurality winner) or — when the rounds produced no
+   * plurality winner — a sudden-death spin among only the tied options
+   * ("⚡ Sudden death — winner takes all!"), whose winner is the champion.
    */
   const playRounds = useCallback(
-    (ids: number[], championId: number) => {
+    (ids: number[], championId: number, sdTiedIds?: number[] | null) => {
       setRevealed(false);
       setChampion(null);
       setRoundBeat(null);
       setElimOrder(null);
       setKnockout(null);
+      setSuddenDeath(false);
       setPhrase(randomPhrase());
       let i = 0;
       const next = () => {
         if (!alive.current) return;
         if (i >= ids.length) {
+          if (sdTiedIds && sdTiedIds.length > 0) {
+            // Sudden death: one full spin among the tied options only.
+            // 2 tied -> coin, 3 tied -> slot; a single spin always yields
+            // exactly one winner, so it can't re-tie.
+            setSuddenDeath(true);
+            const tiedPool = getOptions(setId).filter((o) => sdTiedIds.includes(o.id));
+            playAnimation(
+              championId,
+              () => {
+                setSuddenDeath(false);
+                const champ = getOption(championId);
+                setChampion({ name: champ?.name ?? '…', detail: 'Won in sudden death!' });
+                setRoundIdx(-1);
+                setRevealed(true);
+                scale.setValue(0.6);
+                Animated.spring(scale, { toValue: 1, friction: 5, useNativeDriver: true }).start();
+              },
+              tiedPool
+            );
+            return;
+          }
           const champ = getOption(championId);
           const wins = ids.filter((x) => x === championId).length;
           setChampion({
@@ -241,7 +267,7 @@ export default function ResultScreen() {
       };
       next();
     },
-    [playAnimation, scale]
+    [playAnimation, scale, setId]
   );
 
   /**
@@ -258,6 +284,7 @@ export default function ResultScreen() {
       setChampion(null);
       setRoundBeat(null);
       setKnockout(null);
+      setSuddenDeath(false);
       setSeq(null);
       setPhrase(randomPhrase());
       let pool = getOptions(setId);
@@ -304,11 +331,12 @@ export default function ResultScreen() {
     alive.current = true;
     const ko = route.params.knockoutOrder;
     const ids = route.params.rollSequence;
+    const sd = route.params.suddenDeathTiedIds;
     if (ko && ko.length > 1) {
       setElimOrder(ko);
       playElimination(ko, route.params.winnerId);
     } else if (ids && ids.length > 1) {
-      playRounds(ids, route.params.winnerId);
+      playRounds(ids, route.params.winnerId, sd && sd.length > 0 ? sd : null);
     } else {
       runSingleReveal(route.params.winnerId);
     }
@@ -345,8 +373,9 @@ export default function ResultScreen() {
         });
         playElimination(knockoutOrder, winner.id);
       } else if (bestOfMode > 1) {
-        const { winner, streak, sequence } = performBestOf(setId);
+        const { winner, streak, sequence, suddenDeath: sd } = performBestOf(setId);
         const ids = sequence.map((o) => o.id);
+        const tiedIds = sd ? sd.tied.map((o) => o.id) : null;
         setWinnerId(winner.id);
         setSeq(ids);
         setElimOrder(null);
@@ -355,7 +384,7 @@ export default function ResultScreen() {
           milestoneTitle: streak.milestone?.title ?? null,
           firstRollToday: streak.isFirstRollToday,
         });
-        playRounds(ids, winner.id);
+        playRounds(ids, winner.id, tiedIds);
       } else {
         const { winner, streak } = performRoll(setId);
         setWinnerId(winner.id);
@@ -388,13 +417,15 @@ export default function ResultScreen() {
     ? champion
       ? '🏆 Champion crowned'
       : `🎲 ${phrase}`
-    : elimOrder
-      ? roundIdx < 0
-        ? '🎡 Spinning up…'
-        : `🎡 Round ${roundIdx + 1} — ${elimOrder.length - roundIdx} remain…`
-      : roundBeat || roundIdx >= 0
-        ? `🎲 Round ${(roundBeat?.index ?? roundIdx) + 1} of ${seq?.length ?? '?'}…`
-        : '🎲 Rolling…';
+    : suddenDeath
+      ? '⚡ Sudden death — winner takes all!'
+      : elimOrder
+        ? roundIdx < 0
+          ? '🎡 Spinning up…'
+          : `🎡 Round ${roundIdx + 1} — ${elimOrder.length - roundIdx} remain…`
+        : roundBeat || roundIdx >= 0
+          ? `🎲 Round ${(roundBeat?.index ?? roundIdx) + 1} of ${seq?.length ?? '?'}…`
+          : '🎲 Rolling…';
 
   const wheelSpin = wheelRot.interpolate({
     inputRange: [0, 360],
