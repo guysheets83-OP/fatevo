@@ -3,6 +3,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
   Easing,
   Share,
@@ -11,9 +12,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Sharing from 'expo-sharing';
+import ViewShot, { type ViewShotRef } from 'react-native-view-shot';
 import { getOption, getOptions, type SetOption } from '../db';
 import type { RootStackParamList } from '../navigation';
 import { colors, spacing } from '../theme';
+import ShareCard from '../components/ShareCard';
 import { performBestOf, performElimination, performRoll } from './SetDetailScreen';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Result'>;
@@ -86,6 +90,7 @@ export default function ResultScreen() {
   const wheelRot = useRef(new Animated.Value(0)).current;
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const alive = useRef(true);
+  const shotRef = useRef<ViewShotRef>(null);
 
   const clearTimers = () => {
     timers.current.forEach(clearTimeout);
@@ -402,15 +407,47 @@ export default function ResultScreen() {
     }
   };
 
-  const shareResult = () => {
+  const shareWinnerName = () => {
+    if (champion) return champion.name;
     const opt = getOption(winnerId);
-    const name = opt?.name ?? displayName;
-    const options = getOptions(setId)
-      .map((o) => o.name)
-      .join(', ');
-    Share.share({
-      message: `🎲 Fate chose ${name.toUpperCase()}!\nThe options were: ${options}\nCan't pick? Fatevo.`,
-    }).catch(() => {});
+    return opt?.name ?? displayName;
+  };
+
+  const shareOptionNames = () => getOptions(setId).map((o) => o.name);
+
+  const buildShareText = () => {
+    const name = shareWinnerName();
+    const options = shareOptionNames().join(', ');
+    return `🎲 Fate chose ${name.toUpperCase()}!\nThe options were: ${options}\nCan't pick? Fatevo.`;
+  };
+
+  const shareAsText = () => {
+    Share.share({ message: buildShareText() }).catch(() => {});
+  };
+
+  const shareAsImage = async () => {
+    try {
+      const uri = await shotRef.current?.capture?.();
+      if (!uri) throw new Error('Could not capture the card.');
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert('Sharing unavailable', 'Your device cannot share files.');
+        return;
+      }
+      await Sharing.shareAsync(uri, {
+        mimeType: 'image/png',
+        dialogTitle: 'Share result',
+      });
+    } catch (e: any) {
+      Alert.alert('Could not share', e?.message ?? 'Something went wrong.');
+    }
+  };
+
+  const shareResult = () => {
+    Alert.alert('Share result', undefined, [
+      { text: 'Share as text', onPress: shareAsText },
+      { text: 'Share image card', onPress: shareAsImage },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const kickerText = revealed
@@ -448,6 +485,21 @@ export default function ResultScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Off-screen share card, captured with view-shot on "Share image card". */}
+      <ViewShot
+        ref={shotRef}
+        options={{ format: 'png', quality: 1 }}
+        style={styles.offscreen}
+      >
+        <View collapsable={false}>
+          <ShareCard
+            winnerName={shareWinnerName()}
+            options={shareOptionNames()}
+            phrase={phrase}
+          />
+        </View>
+      </ViewShot>
+
       <Text style={styles.kicker}>{kickerText}</Text>
 
       {!revealed && roundBeat && (
@@ -586,6 +638,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.lg,
+  },
+  offscreen: {
+    position: 'absolute',
+    left: -2000,
+    top: 0,
   },
   kicker: { color: colors.accent, fontSize: 16, fontWeight: '700', marginBottom: spacing.md },
   stage: {

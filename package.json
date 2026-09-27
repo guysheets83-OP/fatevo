@@ -11,7 +11,8 @@
     "react": "19.2.3",
     "react-native": "0.86.3",
     "react-native-safe-area-context": "~5.7.0",
-    "react-native-screens": "~4.26.0"
+    "react-native-screens": "~4.26.0",
+    "react-native-view-shot": "5.1.0"
   },
   "description": "Can't pick? Fatevo. A fun random decision-maker — add your options, weight them, and let fate decide.",
   "devDependencies": {
