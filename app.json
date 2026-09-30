@@ -11,7 +11,7 @@
     "assetBundlePatterns": [
       "**/*"
     ],
-    "description": "Can't pick? Fatevo. A fun random decision-maker — add your options, weight them, and let fate decide.",
+    "description": "Can't pick? Fatevo. A fun random decision-maker \u2014 add your options, weight them, and let fate decide.",
     "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true
@@ -34,7 +34,13 @@
     "owner": "guysheets83",
     "plugins": [
       "expo-sharing",
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-5900016460236556~5604584341"
+        }
+      ]
     ]
   }
 }

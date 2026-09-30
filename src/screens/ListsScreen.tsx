@@ -1,6 +1,7 @@
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
 import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -262,6 +263,12 @@ export default function ListsScreen() {
         }}
       />
       <HowItWorks visible={helpVisible} onClose={() => setHelpVisible(false)} />
+      <View style={styles.adContainer}>
+        <BannerAd
+          unitId="ca-app-pub-5900016460236556/6580866500"
+          size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
+        />
+      </View>
     </View>
   );
 }
@@ -359,4 +366,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   infoButtonText: { color: colors.primary, fontSize: 20, lineHeight: 22, fontWeight: '700' },
+  adContainer: {
+    alignItems: 'center',
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.sm,
+  },
 });
