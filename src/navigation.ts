@@ -2,6 +2,7 @@ export type RootStackParamList = {
   Lists: undefined;
   SetDetail: { setId: number };
   OptionEdit: { setId: number; optionId?: number };
+  Recap: undefined;
   Result: {
     setId: number;
     winnerId: number;

@@ -17,12 +17,14 @@ import {
   createSet,
   deleteSet,
   getMeta,
+  getRollsInRange,
   getSetSummaries,
   getStreakState,
   renameSet,
   setMeta,
 } from '../db';
 import type { RootStackParamList } from '../navigation';
+import { monthBounds } from '../recap';
 import { MILESTONES, titleForStreak } from '../streak';
 import { colors, spacing } from '../theme';
 import type { SetSummary } from '../db';
@@ -56,6 +58,7 @@ export default function ListsScreen() {
   const [editing, setEditing] = useState<SetSummary | null>(null);
   const [streakCount, setStreakCount] = useState(0);
   const [streakTitle, setStreakTitle] = useState<string | null>(null);
+  const [monthRolls, setMonthRolls] = useState(0);
   const [tutorialVisible, setTutorialVisible] = useState(false);
   const [helpVisible, setHelpVisible] = useState(false);
   const tutorialChecked = useRef(false);
@@ -65,6 +68,9 @@ export default function ListsScreen() {
     const s = getStreakState();
     setStreakCount(s.count);
     setStreakTitle(titleForStreak(s.count));
+    const now = new Date();
+    const { start, end } = monthBounds(now.getFullYear(), now.getMonth());
+    setMonthRolls(getRollsInRange(start, end).length);
     if (!tutorialChecked.current) {
       tutorialChecked.current = true;
       if (getMeta(TUTORIAL_KEY) !== '1') {
@@ -183,6 +189,23 @@ export default function ListsScreen() {
           )}
         </View>
       </LinearGradient>
+      <TouchableOpacity
+        style={styles.recapBanner}
+        onPress={() => navigation.navigate('Recap')}
+        accessibilityLabel="View your monthly recap"
+        activeOpacity={0.85}
+      >
+        <Text style={styles.recapEmoji}>🎉</Text>
+        <View style={styles.recapText}>
+          <Text style={styles.recapTitle}>Your Fatevo Month</Text>
+          <Text style={styles.recapSub}>
+            {monthRolls > 0
+              ? `${monthRolls} ${monthRolls === 1 ? 'decision' : 'decisions'} left to fate — tap to celebrate`
+              : 'Roll the dice and your month starts writing itself'}
+          </Text>
+        </View>
+        <Text style={styles.recapChevron}>›</Text>
+      </TouchableOpacity>
       {sets.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No lists yet</Text>
@@ -269,6 +292,22 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: colors.accent,
   },
+  recapBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    margin: spacing.md,
+    marginBottom: 0,
+    padding: spacing.md,
+    borderRadius: 16,
+    backgroundColor: '#23233f',
+    borderWidth: 2,
+    borderColor: colors.accent,
+  },
+  recapEmoji: { fontSize: 34, marginRight: spacing.md },
+  recapText: { flex: 1 },
+  recapTitle: { fontSize: 18, fontWeight: '800', color: '#fff' },
+  recapSub: { fontSize: 13, color: '#ffffffcc', marginTop: 2 },
+  recapChevron: { fontSize: 26, color: colors.accent, fontWeight: '700' },
   list: { padding: spacing.md, gap: spacing.sm },
   card: {
     backgroundColor: colors.surface,

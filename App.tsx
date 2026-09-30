@@ -7,6 +7,7 @@ import { getDb } from './src/db';
 import type { RootStackParamList } from './src/navigation';
 import ListsScreen from './src/screens/ListsScreen';
 import OptionEditScreen from './src/screens/OptionEditScreen';
+import RecapScreen from './src/screens/RecapScreen';
 import ResultScreen from './src/screens/ResultScreen';
 import SetDetailScreen from './src/screens/SetDetailScreen';
 import { colors } from './src/theme';
@@ -60,6 +61,11 @@ export default function App() {
           }}
         />
         <Stack.Screen name="SetDetail" component={SetDetailScreen} options={{ title: 'Options' }} />
+        <Stack.Screen
+          name="Recap"
+          component={RecapScreen}
+          options={{ title: 'Your Fatevo Month' }}
+        />
         <Stack.Screen name="OptionEdit" component={OptionEditScreen} options={{ title: 'Option' }} />
         <Stack.Screen
           name="Result"

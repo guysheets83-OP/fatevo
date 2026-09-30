@@ -30,6 +30,7 @@
     "start": "expo start",
     "typecheck": "tsc --noEmit",
     "test:roll": "tsc src/roll.ts --outDir node_modules/.cache/roll-test --module commonjs --target es2020 && node scripts/test-roll.js node_modules/.cache/roll-test/roll.js",
+    "test:recap": "tsc --ignoreConfig src/recap.ts --outDir node_modules/.cache/recap-test --module commonjs --target es2020 && node scripts/test-recap.js node_modules/.cache/recap-test/recap.js",
     "test:streak": "tsc src/streak.ts --outDir node_modules/.cache/streak-test --module commonjs --target es2020 && node scripts/test-streak.js node_modules/.cache/streak-test/streak.js"
   },
   "version": "1.0.0"

@@ -55,6 +55,16 @@ export function getDb(): SQLite.SQLiteDatabase {
         key TEXT PRIMARY KEY,
         value TEXT
       );
+      -- Roll history for the monthly recap. Snapshots the list name/emoji so
+      -- stats survive renames and deletions. On-device only, never leaves the phone.
+      CREATE TABLE IF NOT EXISTS rolls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        set_id INTEGER NOT NULL,
+        set_name TEXT NOT NULL,
+        set_emoji TEXT NOT NULL,
+        rolled_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_rolls_at ON rolls(rolled_at);
     `);
     // Migration: lists created before the emoji column existed.
     const cols = db.getAllSync<any>(`PRAGMA table_info(sets)`);
@@ -234,4 +244,44 @@ export function saveStreakState(state: StreakState): void {
      ON CONFLICT(id) DO UPDATE SET count = excluded.count, last_roll_date = excluded.last_roll_date`,
     [state.count, state.lastRollDate]
   );
+}
+
+// ---------- roll history (monthly recap) ----------
+
+export interface RollRecord {
+  id: number;
+  setId: number;
+  setName: string;
+  setEmoji: string;
+  rolledAt: number;
+}
+
+/**
+ * Log one roll session for the monthly recap. Snapshots the list's current
+ * name/emoji so stats survive renames and deletions. On-device only.
+ */
+export function recordRoll(setId: number): void {
+  const set = getSet(setId);
+  if (!set) return;
+  getDb().runSync(
+    `INSERT INTO rolls (set_id, set_name, set_emoji, rolled_at) VALUES (?, ?, ?, ?)`,
+    [setId, set.name, set.emoji, Date.now()]
+  );
+}
+
+/** All roll records in [startMs, endMs), oldest first. */
+export function getRollsInRange(startMs: number, endMs: number): RollRecord[] {
+  const rows = getDb().getAllSync<any>(
+    `SELECT id, set_id, set_name, set_emoji, rolled_at FROM rolls
+     WHERE rolled_at >= ? AND rolled_at < ?
+     ORDER BY rolled_at ASC`,
+    [startMs, endMs]
+  );
+  return rows.map((r) => ({
+    id: r.id as number,
+    setId: r.set_id as number,
+    setName: r.set_name as string,
+    setEmoji: (r.set_emoji as string) || '🎲',
+    rolledAt: r.rolled_at as number,
+  }));
 }

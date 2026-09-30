@@ -19,6 +19,7 @@ import {
   getSet,
   getStreakState,
   markDrawn,
+  recordRoll,
   resetDrawn,
   saveStreakState,
   setNoRepeat,
@@ -79,6 +80,7 @@ function recordStreakOnce(): RollStreakResult {
 /** Shared roll logic: honors no-repeat mode, persists deck-draw state, records the daily streak. */
 export function performRoll(setId: number): RollOutcome {
   const winner = pickWinnerOnly(setId);
+  recordRoll(setId);
   return { winner, streak: recordStreakOnce() };
 }
 
@@ -93,6 +95,7 @@ export function performBestOf(setId: number): BestOfOutcome {
   const set = getSet(setId);
   if (!set) throw new Error('List not found.');
   if (set.noRepeat) throw new Error('Best-of needs no-repeat mode off.');
+  recordRoll(setId);
   const sequence: SetOption[] = [];
   for (let i = 0; i < 3; i++) sequence.push(pickWinnerOnly(setId));
   const counts = new Map<number, number>();
@@ -131,6 +134,7 @@ export function performElimination(setId: number): EliminationOutcome {
   if (!set) throw new Error('List not found.');
   let remaining = getOptions(setId);
   if (remaining.length < 5) throw new Error('Elimination needs at least 5 options.');
+  recordRoll(setId);
   const knockoutOrder: number[] = [];
   while (remaining.length > 1) {
     const out = pickKnockout(remaining);
