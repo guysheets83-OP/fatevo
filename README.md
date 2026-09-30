@@ -1,38 +1,57 @@
-# Fatevo — "Can't pick? Fatevo."
+# Fatevo — Can't pick? Fatevo.
 
-A fun random decision-maker. Add your options, weight them 1–5, tap **ROLL**, and let fate decide. Offline-first: everything lives on the device, $0/month, no accounts, no data collection.
+A fun, offline-first random decision-maker for Android. Add your options, weight them, tap **ROLL**, and let fate decide — coin flips, dice, a prize wheel, best-of showdowns, and elimination brackets, wrapped in daily streaks and a monthly recap worth sharing.
 
-## Screens
-1. **My Lists** — saved option sets; tap to open, long-press to rename/delete, ＋ to create; 🔥 daily-streak banner on top
-2. **List detail** — options with weights, no-repeat toggle, Share button, big ROLL button
-3. **Add/Edit option** — name + weight stepper (1–5)
-4. **Result** — animated shuffle-then-reveal, streak note / milestone celebration, "Roll again" / "Back to list"
+## Features
+
+- **Decision lists** — saved option sets with named, emoji-tagged options and weights (1–5); no-repeat toggle per list
+- **Roll modes** — classic random pick, coin flip, dice, prize wheel, best-of-3, sudden-death tiebreak, and elimination mode
+- **Daily streaks** — flame counter on the home screen with milestone celebrations at 7, 30, and 100 days; miss a day and it resets
+- **Your Fatevo Month** — an on-device monthly recap of your top 3 decision categories with percentages, a confetti reveal, and a shareable recap card
+- **Sharing** — share any result as text or as a category-led image card
+- **How Fatevo works** — built-in help sheet explaining every mode
+- **Free with ads** — AdMob anchored adaptive banner on the Lists screen
+
+## Privacy
+
+Fatevo works fully offline. No accounts, no sign-up, no tracking — your lists, roll history, streaks, settings, and recap statistics never leave your device. The only network-adjacent component is Google AdMob banner advertising.
+
+## Tech stack
+
+- [Expo](https://expo.dev) (SDK 57) + React Native 0.86 + TypeScript + React Navigation
+- `expo-sqlite` — tables for sets, options, no-repeat bookkeeping, streaks, and monthly recap stats
+- `react-native-google-mobile-ads` for banner monetization
+- `expo-sharing` + `react-native-view-shot` for shareable result and recap cards
+- Built and signed via [EAS Build](https://expo.dev/eas)
 
 ## Run it
+
+Prerequisites: Node.js (LTS).
+
 ```bash
 npm install
 npx expo start        # scan the QR code with Expo Go on an Android phone
 ```
 
 ## Verify it
+
 ```bash
 npm run typecheck     # TypeScript — must be clean
 npm run test:roll     # unit tests for the weighted-random + no-repeat logic (seeded, deterministic)
 npm run test:streak   # unit tests for the daily-streak transitions + milestones
 ```
 
-## Publish day (NOT done — do not do these without Guy's sign-off)
-- [ ] $25 one-time Google Play developer registration (personal account, identity verification)
-- [ ] `eas build --platform android` → upload the `.aab` to Play Console
-- [ ] Package name is `com.fatevo.app` — set in `app.json`, can never change after publish
-- [ ] Listing assets: icon is in `assets/` (icon.png, adaptive-icon.png); still needed: feature graphic 1024×500, 2–8 phone screenshots, short + full description
-- [ ] Content-rating questionnaire (G-rated utility)
-- [ ] One-paragraph privacy policy ("Fatevo collects no data; everything stays on your device") hosted free, linked in the listing
-- [ ] Data safety form: declare "no data collected"
-- [ ] Attorney clearance on the Fatevo name before any filing/use
+## Build it
 
-## Tech notes
-- Expo SDK 57 + TypeScript + React Navigation (native stack)
-- `expo-sqlite` — tables: `sets`, `options`, `drawn` (no-repeat bookkeeping), `streak` (single-row: count + last roll date; milestones at 7/30/100 in code, not data)
-- `expo-sharing` + `expo-file-system` (new `File`/`Paths` API) — share a list as a text file
-- No permissions beyond defaults; works fully in airplane mode
+```bash
+eas build --platform android --profile preview   # sideloadable APK
+eas build --platform android --profile production # AAB for Google Play
+```
+
+## Project status
+
+In active development, heading toward a Google Play release. iOS is on hold.
+
+## License
+
+MIT — see [LICENSE](LICENSE) for details.
